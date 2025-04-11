@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
-import time
 
 # Streamlit page config
 st.set_page_config(layout="wide", page_title="Stock Price Predictor", page_icon="📈")
@@ -20,7 +19,7 @@ end_date = st.sidebar.date_input("End Date", pd.to_datetime("2024-12-31"))
 
 # Function to fetch live data
 def fetch_live_data(symbol):
-    live_data = yf.download(symbol, period="1d", interval="1m")
+    live_data = yf.download(symbol, period="1d", interval="1m")  # 1-minute interval for live data
     return live_data
 
 # Button to trigger prediction
@@ -36,7 +35,7 @@ if st.sidebar.button("Predict"):
     else:
         st.success("Live data loaded successfully!")
         df = df[['Close']]
-        
+
         # Calculate moving averages
         df['MA20'] = df['Close'].rolling(window=20).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
@@ -116,4 +115,3 @@ if st.sidebar.button("Predict"):
         st.plotly_chart(fig, use_container_width=True)
 
         st.caption("Built with LSTM model using Keras and Streamlit.")
-
