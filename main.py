@@ -1,4 +1,3 @@
-pip install streamlit yfinance numpy pandas matplotlib scikit-learn tensorflow keras
 
 
 import streamlit as st
