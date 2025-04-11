@@ -2,7 +2,7 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from keras.models import Sequential
 from keras.layers import LSTM, Dense, Dropout
@@ -10,6 +10,17 @@ from keras.layers import LSTM, Dense, Dropout
 # Streamlit page config
 st.set_page_config(layout="wide", page_title="Stock Price Predictor", page_icon="📈")
 st.title("📈 Stock Price Predictor with LSTM")
+
+# Apply custom dark theme
+st.markdown("""
+    <style>
+        .css-ffhzg2 { background-color: #181818; color: #e0e0e0; }
+        .css-1cpxqw2 { background-color: #181818; color: #e0e0e0; }
+        .css-1a2pyg6 { background-color: #333333; color: #e0e0e0; }
+        .css-1l8ov3g { background-color: #333333; color: #e0e0e0; }
+        .css-5g1j28 { background-color: #333333; color: #e0e0e0; }
+    </style>
+""", unsafe_allow_html=True)
 
 # Sidebar inputs
 st.sidebar.header("Input Parameters")
@@ -98,20 +109,18 @@ if st.sidebar.button("Predict"):
         predicted_prices = scaler.inverse_transform(predicted.reshape(-1, 1))
         real_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-        # Plotly Interactive Chart
+        # Matplotlib Interactive Chart
         st.subheader(f"📉 {stock_symbol} Actual vs Predicted Price")
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(y=real_prices.flatten(), name='Actual Price', mode='lines', line=dict(color='blue')))
-        fig.add_trace(go.Scatter(y=predicted_prices.flatten(), name='Predicted Price', mode='lines', line=dict(color='red')))
-        fig.update_layout(
-            xaxis_title="Time",
-            yaxis_title="Price (USD)",
-            legend=dict(x=0, y=1.0),
-            margin=dict(l=40, r=40, t=40, b=40),
-            height=500,
-            template='plotly_dark'
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(real_prices.flatten(), label="Actual Price", color="blue")
+        ax.plot(predicted_prices.flatten(), label="Predicted Price", color="red")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Price (USD)")
+        ax.set_title(f"Stock Price Prediction for {stock_symbol}")
+        ax.legend(loc="upper left")
+        ax.grid(True, linestyle="--", alpha=0.7)
+        plt.tight_layout()
+        st.pyplot(fig)
 
         st.caption("Built with LSTM model using Keras and Streamlit.")
