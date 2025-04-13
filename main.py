@@ -66,22 +66,25 @@ predicted_prices = scaler.inverse_transform(predicted.reshape(-1,1))
 real_prices = scaler.inverse_transform(y_test.reshape(-1,1))
 
 # Plotting the Graph
-plt.figure(figsize=(14, 6))
-plt.plot(real_prices, color='blue', label='Actual Price')
-plt.plot(predicted_prices, color='red', label='Predicted Price')
-plt.title(f'{ticker} Stock Price Prediction')
-plt.xlabel('Time')
-plt.ylabel('Stock Price')
-plt.legend()
-st.pyplot()
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.plot(real_prices, color='blue', label='Actual Price')
+ax.plot(predicted_prices, color='red', label='Predicted Price')
+ax.set_title(f'{ticker} Stock Price Prediction')
+ax.set_xlabel('Time')
+ax.set_ylabel('Stock Price')
+ax.legend()
+st.pyplot(fig)
 
 # Evaluate Performance
 rmse = np.sqrt(mean_squared_error(real_prices, predicted_prices))
 st.write(f"Root Mean Squared Error (RMSE): {rmse:.2f}")
 
 # Sidebar: Current Stock Update
-latest_price = df["Close"].iloc[-1]
-latest_date = df.index[-1]
-st.sidebar.subheader(f"Latest Update: {ticker}")
-st.sidebar.write(f"Current Price: ${latest_price:.2f}")
-st.sidebar.write(f"Date: {latest_date.strftime('%Y-%m-%d')}")
+if not df.empty:
+    latest_price = df["Close"].iloc[-1]
+    latest_date = df.index[-1]
+    st.sidebar.subheader(f"Latest Update: {ticker}")
+    st.sidebar.write(f"Current Price: ${latest_price:.2f}")
+    st.sidebar.write(f"Date: {latest_date.strftime('%Y-%m-%d')}")
+else:
+    st.sidebar.write("No data available for the selected stock and date range.")
