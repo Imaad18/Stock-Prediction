@@ -5,3 +5,4 @@ yfinance
 matplotlib
 scikit-learn
 tensorflow
+feedparser
