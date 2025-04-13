@@ -20,7 +20,7 @@ ticker = st.sidebar.text_input("Enter Stock Ticker (e.g. AAPL, TSLA):", "AAPL")
 st.sidebar.write("Stock Ticker Selected:", ticker)
 
 # Fetch Data
-@st.cache
+@st.cache_data
 def fetch_data(ticker):
     df = yf.download(ticker, start="2020-01-01", end="2024-12-31")
     df = df[["Close"]]
