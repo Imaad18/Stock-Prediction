@@ -15,4 +15,4 @@ This project aims to predict the future stock prices of publicly traded companie
 
 # Important Note:
 
-* The main.py file has complete code whic you can use to deploy web app on streamlit
+* The main.py file has complete code which you can use to deploy web app on streamlit
