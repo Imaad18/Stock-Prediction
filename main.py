@@ -89,18 +89,11 @@ else:
         predicted_prices = scaler.inverse_transform(predicted.reshape(-1, 1))
         real_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-        # Plotting the Prediction for the Selected Ticker
+        # Plotting the Prediction for the Selected Ticker (only 2 lines)
         fig, ax = plt.subplots(figsize=(14, 6))
-        ax.plot(df.index[split + sequence_length:], real_prices, color='blue', label=f'{ticker} Actual Price')
-        ax.plot(df.index[split + sequence_length:], predicted_prices, color='red', label=f'{ticker} Predicted Price')
-
-        # Add comparison stock data to the plot
-        for ticker_comp in tickers_compare.split(','):
-            ticker_comp = ticker_comp.strip()
-            if ticker_comp in dfs and len(dfs[ticker_comp]) > 0:
-                df_comp = dfs[ticker_comp][["Close"]]
-                ax.plot(df_comp.index, df_comp["Close"], label=f'{ticker_comp} Actual Price', alpha=0.6)
-
+        ax.plot(df.index[split + sequence_length:], real_prices, color='blue', label=f'{ticker} Actual Price', linewidth=2)
+        ax.plot(df.index[split + sequence_length:], predicted_prices, color='red', linestyle='--', label=f'{ticker} Predicted Price', linewidth=2)
+        
         ax.set_title(f'{ticker} Stock Price Prediction')
         ax.set_xlabel('Time')
         ax.set_ylabel('Stock Price')
