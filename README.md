@@ -12,3 +12,7 @@ This project aims to predict the future stock prices of publicly traded companie
 * Exploratory Data Analysis (EDA) with Matplotlib/Seaborn
 
 * Model Evaluation(MSE)
+
+# Important Note:
+
+* The main.py file has complete code whic you can use to deploy web app on streamlit
