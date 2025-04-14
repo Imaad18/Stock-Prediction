@@ -62,7 +62,9 @@ else:
             x.append(scaled_data[i-sequence_length:i, 0])
             y.append(scaled_data[i, 0])
         x, y = np.array(x), np.array(y)
-        x = np.reshape(x, (x.shape[0], x.shape[1], 1))
+
+        # Reshape x_train and x_test to be 3D for LSTM
+        x = np.reshape(x, (x.shape[0], x.shape[1], 1))  # Reshape for LSTM input
 
         # Train-Test Split
         split = int(0.8 * len(x))
@@ -71,7 +73,7 @@ else:
 
         # Build LSTM Model
         model = Sequential()
-        model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+        model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))  # Time steps, Features
         model.add(Dropout(0.2))
         model.add(LSTM(units=50, return_sequences=False))
         model.add(Dropout(0.2))
