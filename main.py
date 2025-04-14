@@ -149,10 +149,12 @@ with st.sidebar:
     for t, df_t in valid_tickers.items():
         if not df_t.empty:
             try:
-                # Ensure we're working with a scalar value
-                last_price = float(df_t['Close'].iloc[-1])
-                st.metric(label=t, value=f"${last_price:.2f}")
-            except (ValueError, IndexError) as e:
+                # Properly extract the scalar value
+                last_price = df_t['Close'].iloc[-1]
+                if hasattr(last_price, 'values'):  # If it's a pandas Series
+                    last_price = last_price.values[0]
+                st.metric(label=t, value=f"${float(last_price):.2f}")
+            except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
