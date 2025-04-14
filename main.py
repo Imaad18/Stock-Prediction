@@ -17,26 +17,32 @@ st.title("📈 Stock Price Prediction with LSTM")
 # Sidebar: Inputs
 st.sidebar.header("Stock Input")
 ticker = st.sidebar.text_input("Enter Stock Ticker:", "AAPL")
+tickers_compare = st.sidebar.text_input("Compare with another stock (comma separated):", "GOOG")
 start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2020-01-01"))
 end_date = st.sidebar.date_input("End Date", pd.to_datetime("2024-12-31"))
 
 # Fetch Stock Data
 df = yf.download(ticker, start=start_date, end=end_date)
-df_all = df.copy()  # Keep full data for table
+tickers = [ticker] + [x.strip() for x in tickers_compare.split(',')]  # Add comparison tickers
+dfs = {}
+
+# Download data for all tickers
+for ticker in tickers:
+    dfs[ticker] = yf.download(ticker, start=start_date, end=end_date)
 
 # Show Full Stock Data Table
 st.subheader(f"📊 Stock Data for {ticker}")
-if not df_all.empty:
-    df_all = df_all[["Open", "High", "Low", "Close", "Volume"]]
-    st.dataframe(df_all.tail(100))  # Show last 100 rows
-else:
+if dfs[ticker].empty:
     st.write("No stock data found for the given input.")
+else:
+    df_all = dfs[ticker][["Open", "High", "Low", "Close", "Volume"]]
+    st.dataframe(df_all.tail(100))  # Show last 100 rows
 
 # Continue only if data is valid
-if not df.empty and len(df) > 60:
+if len(dfs[ticker]) > 60:
 
     # Use only Close price for prediction
-    df = df[["Close"]]
+    df = dfs[ticker][["Close"]]
 
     # Normalize Data
     scaler = MinMaxScaler()
@@ -72,10 +78,29 @@ if not df.empty and len(df) > 60:
     predicted_prices = scaler.inverse_transform(predicted.reshape(-1, 1))
     real_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
 
-    # Plotting the Prediction
+    # Plotting the Prediction for the Selected Ticker
     fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(real_prices, color='blue', label='Actual Price')
-    ax.plot(predicted_prices, color='red', label='Predicted Price')
+    ax.plot(real_prices, color='blue', label=f'{ticker} Actual Price')
+    ax.plot(predicted_prices, color='red', label=f'{ticker} Predicted Price')
+
+    # Add comparison stock data to the plot
+    for ticker_comp in tickers_compare.split(','):
+        if ticker_comp.strip() in dfs:
+            df_comp = dfs[ticker_comp.strip()][["Close"]]
+            scaled_data_comp = scaler.fit_transform(df_comp)
+            x_comp, y_comp = [], []
+            for i in range(sequence_length, len(scaled_data_comp)):
+                x_comp.append(scaled_data_comp[i-sequence_length:i, 0])
+                y_comp.append(scaled_data_comp[i, 0])
+            x_comp, y_comp = np.array(x_comp), np.array(y_comp)
+            x_comp = np.reshape(x_comp, (x_comp.shape[0], x_comp.shape[1], 1))
+
+            # Model prediction for comparison stock
+            model.fit(x_comp, y_comp, batch_size=32, epochs=20, validation_data=(x_test, y_test))
+            predicted_comp = model.predict(x_comp)
+            predicted_prices_comp = scaler.inverse_transform(predicted_comp.reshape(-1, 1))
+            ax.plot(predicted_prices_comp, label=f'{ticker_comp.strip()} Predicted Price')
+
     ax.set_title(f'{ticker} Stock Price Prediction')
     ax.set_xlabel('Time')
     ax.set_ylabel('Stock Price')
