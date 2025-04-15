@@ -1,18 +1,31 @@
-# Price-Prediction-Model
+# Optimized Stock Price Prediction
+# Overview
+* This project implements a stock price prediction system using Long Short-Term Memory (LSTM) networks. The application leverages historical stock data to predict future stock prices and visualize the results. It provides an intuitive and interactive interface built using Streamlit, which allows users to input stock tickers, select date ranges, and view predictions and comparisons between multiple stocks.
 
+# Key Features:
 
-This project aims to predict the future stock prices of publicly traded companies using historical data and various machine learning algorithms. The goal is to analyze trends and build models that can forecast closing prices with reasonable accuracy.
+* Predicts future stock prices using LSTM.
 
-# Techniques Used
+* Displays the stock's actual vs predicted prices.
 
-* Data Collection with yfinance / Alpha Vantage
+* Compares multiple stocks by visualizing their price movements.
 
-* Data Preprocessing (Normalization, Feature Engineering)
+* Interactive dashboard built with Streamlit.
 
-* Exploratory Data Analysis (EDA) with Matplotlib/Seaborn
+* Parallel data fetching for faster performance.
 
-* Model Evaluation(MSE)
+* Real-time stock price display.
 
-# Important Note:
+# Technologies Used
 
-* The main.py file has complete code which you can use to deploy web app on streamlit
+* Python: Programming language used for implementing the model and app.
+
+* TensorFlow & Keras: For building and training the LSTM model.
+
+* yFinance: For fetching historical stock data.
+
+* Streamlit: For building the interactive web app.
+
+* Matplotlib: For plotting and visualizing stock data and predictions.
+
+* Scikit-learn: For data preprocessing and evaluation.
