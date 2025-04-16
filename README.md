@@ -1,6 +1,11 @@
 # Live Demo in Form of App
 https://stock-prediction-ajqgijnbycusph8ttbc6qf.streamlit.app/
 
+# Main.py:
+It contains code which you can use to deploy web app on streamlit
+
+# colab_code.py:
+It is simpler version of main.py to have an idea of code.
 
 # Optimized Stock Price Prediction
 # Overview
