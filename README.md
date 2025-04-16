@@ -1,3 +1,7 @@
+# Live Demo in Form of App
+https://stock-prediction-ajqgijnbycusph8ttbc6qf.streamlit.app/
+
+
 # Optimized Stock Price Prediction
 # Overview
 * This project implements a stock price prediction system using Long Short-Term Memory (LSTM) networks. The application leverages historical stock data to predict future stock prices and visualize the results. It provides an intuitive and interactive interface built using Streamlit, which allows users to input stock tickers, select date ranges, and view predictions and comparisons between multiple stocks.
