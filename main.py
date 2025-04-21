@@ -157,6 +157,5 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    # Last 
-::contentReference[oaicite:2]{index=2}
+    
  
