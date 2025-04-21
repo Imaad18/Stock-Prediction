@@ -12,18 +12,16 @@ import concurrent.futures
 import time
 from datetime import datetime
 import requests
+from bs4 import BeautifulSoup
 from matplotlib.animation import FuncAnimation
 
-# Load stock data with error handling
+# Load stock data
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
     try:
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        if df.empty:
-            raise ValueError(f"No data returned for {ticker}")
-        return df[["Open", "High", "Low", "Close", "Volume"]]
-    except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {e}")
+        return df[["Open", "High", "Low", "Close", "Volume"]] if not df.empty else None
+    except:
         return None
 
 # LSTM model
@@ -39,25 +37,23 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-# Fetch market news using News API
+# Scraping Stock Market News from Yahoo Finance
 def fetch_market_news():
-    api_key = "58a8fe1c7b904795b0df5cb6c8d86097"  # Your provided News API key
-    url = f"https://newsapi.org/v2/everything?q=stock market OR finance&apiKey={api_key}"
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            results = response.json()
-            news_links = []
-            for article in results.get("articles", [])[:5]:  # Get top 5 articles
-                title = article.get("title", "No Title")
-                link = article.get("url", "#")
-                news_links.append((title, link))
-            return news_links
-        else:
-            st.error(f"Failed to fetch news. HTTP Status Code: {response.status_code}")
-            return []
+        url = "https://finance.yahoo.com/quote/{}/news?p={}"
+        news_links = []
+        response = requests.get(url.format(ticker, ticker))
+        soup = BeautifulSoup(response.text, 'html.parser')
+        news_section = soup.find_all('li', {'class': 'js-stream-content'})
+        
+        for item in news_section[:5]:
+            title = item.find('h3').text if item.find('h3') else "No title"
+            link = item.find('a')['href'] if item.find('a') else "#"
+            news_links.append((title, "https://finance.yahoo.com" + link if link != "#" else "#"))
+        
+        return news_links
     except Exception as e:
-        st.error(f"Error fetching market news: {e}")
+        print("Error fetching news:", e)
         return []
 
 # App UI
@@ -173,13 +169,12 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    # News section in sidebar
-    st.sidebar.subheader("📰 Latest Market News")
+    # News section
+    st.subheader("📰 Latest Market News")
     news_links = fetch_market_news()
-    if news_links:
-        for title, link in news_links:
-            st.sidebar.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
-    else:
-        st.sidebar.write("⚠ No news available at the moment.")
+    if not news_links:
+        st.write("⚠ No news found.")
+    for title, link in news_links:
+        st.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
