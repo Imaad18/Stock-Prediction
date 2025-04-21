@@ -1,8 +1,15 @@
-streamlit
-pandas
-numpy
-yfinance
-matplotlib
-scikit-learn
-tensorflow
-feedparser
+## Requirements
+
+This project requires the following Python libraries:
+
+- `streamlit`
+- `yfinance`
+- `pandas`
+- `numpy`
+- `keras`
+- `tensorflow`
+- `matplotlib`
+- `scikit-learn`
+- `requests`
+- `nltk`
+- `concurrent.futures`
