@@ -14,13 +14,16 @@ from datetime import datetime
 import requests
 from matplotlib.animation import FuncAnimation
 
-# Load stock data
+# Load stock data with error handling
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
     try:
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        return df[["Open", "High", "Low", "Close", "Volume"]] if not df.empty else None
-    except:
+        if df.empty:
+            raise ValueError(f"No data returned for {ticker}")
+        return df[["Open", "High", "Low", "Close", "Volume"]]
+    except Exception as e:
+        st.error(f"Error fetching data for {ticker}: {e}")
         return None
 
 # LSTM model
@@ -50,7 +53,8 @@ def fetch_market_news():
                     link = news_item.get("link", "#")
                     news_links.append((title, link))
             return news_links
-    except:
+    except Exception as e:
+        st.error(f"Error fetching market news: {e}")
         return []
     return []
 
@@ -167,11 +171,10 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-# Display latest market news in the sidebar
-with st.sidebar:
-    st.subheader("📰 Latest Stock Market News")
+    # News section in sidebar
+    st.sidebar.subheader("📰 Latest Market News")
     news_links = fetch_market_news()
     for title, link in news_links:
-        st.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+        st.sidebar.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
