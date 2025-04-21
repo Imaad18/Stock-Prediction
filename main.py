@@ -12,6 +12,7 @@ import concurrent.futures
 import time
 from datetime import datetime
 import requests
+from matplotlib.animation import FuncAnimation
 
 # Load stock data
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -92,7 +93,7 @@ if not valid_tickers:
 if run_prediction:
     main_df = valid_tickers.get(ticker)
     if main_df is not None:
-        with st.expander(f"📊 {ticker} Stock Data (Last 20 Days)"):
+        with st.expander(f"📊 {ticker} Stock Data (Last 20 Days)") :
             st.dataframe(main_df.tail(20))
 
 if run_prediction and ticker in valid_tickers:
@@ -133,10 +134,19 @@ if run_prediction and ticker in valid_tickers:
     progress_bar.progress(100)
 
     st.subheader(f"📈 {ticker} Price Prediction (RMSE: {rmse:.2f})")
+    
+    # Plot with Animation
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(df.index[split+seq_length:], actual_prices, label="Actual")
-    ax.plot(df.index[split+seq_length:], predicted_prices, label="Predicted")
-    ax.legend()
+    ax.plot(df.index[split+seq_length:], actual_prices, label="Actual", color='blue')
+    ax.set_title(f"{ticker} Stock Price Prediction (RMSE: {rmse:.2f})")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+
+    def update(frame):
+        ax.plot(df.index[split+seq_length:frame], predicted_prices[:frame], label="Predicted", color='red')
+        return ax,
+
+    ani = FuncAnimation(fig, update, frames=len(predicted_prices), blit=False, interval=100)
     st.pyplot(fig)
 
     # Download button
@@ -157,5 +167,11 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    
- 
+# Display latest market news in the sidebar
+with st.sidebar:
+    st.subheader("📰 Latest Stock Market News")
+    news_links = fetch_market_news()
+    for title, link in news_links:
+        st.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+
+st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
