@@ -1,15 +1,10 @@
-## Requirements
-
-This project requires the following Python libraries:
-
-- `streamlit`
-- `yfinance`
-- `pandas`
-- `numpy`
-- `keras`
-- `tensorflow`
-- `matplotlib`
-- `scikit-learn`
-- `requests`
-- `nltk`
-- `concurrent.futures`
+streamlit==1.18.1
+yfinance==0.1.74
+numpy==1.23.0
+pandas==1.5.0
+matplotlib==3.6.2
+scikit-learn==1.1.2
+keras==2.9.0
+tensorflow==2.9.1
+nltk==3.7
+requests==2.28.1
