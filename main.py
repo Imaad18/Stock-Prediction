@@ -1,3 +1,8 @@
+# Ensure nltk is installed and VADER lexicon is downloaded
+import nltk
+nltk.download('vader_lexicon')  # This will download the necessary lexicon for VADER sentiment analysis
+
+# Your existing code for stock prediction and sentiment analysis follows...
 import yfinance as yf
 import numpy as np
 import pandas as pd
