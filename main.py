@@ -39,24 +39,19 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-# Fetch general stock market news
+# Fetch market news using News API
 def fetch_market_news():
+    api_key = "58a8fe1c7b904795b0df5cb6c8d86097"  # Your provided News API key
+    url = f"https://newsapi.org/v2/everything?q=stock market OR finance&apiKey={api_key}"
     try:
-        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
         response = requests.get(url)
-        
         if response.status_code == 200:
             results = response.json()
-            
-            # Log the results for debugging
-            st.write("API Response:", results)  # This line logs the response to the Streamlit app
-            
             news_links = []
-            for item in results.get("finance", {}).get("result", []):
-                for news_item in item.get("news", [])[:5]:
-                    title = news_item.get("title", "Untitled")
-                    link = news_item.get("link", "#")
-                    news_links.append((title, link))
+            for article in results.get("articles", [])[:5]:  # Get top 5 articles
+                title = article.get("title", "No Title")
+                link = article.get("url", "#")
+                news_links.append((title, link))
             return news_links
         else:
             st.error(f"Failed to fetch news. HTTP Status Code: {response.status_code}")
@@ -64,7 +59,6 @@ def fetch_market_news():
     except Exception as e:
         st.error(f"Error fetching market news: {e}")
         return []
-    return []
 
 # App UI
 st.set_page_config(page_title="Stock Predictor AI", layout="wide")
