@@ -44,8 +44,13 @@ def fetch_market_news():
     try:
         url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
         response = requests.get(url)
+        
         if response.status_code == 200:
             results = response.json()
+            
+            # Log the results for debugging
+            st.write("API Response:", results)  # This line logs the response to the Streamlit app
+            
             news_links = []
             for item in results.get("finance", {}).get("result", []):
                 for news_item in item.get("news", [])[:5]:
@@ -53,6 +58,9 @@ def fetch_market_news():
                     link = news_item.get("link", "#")
                     news_links.append((title, link))
             return news_links
+        else:
+            st.error(f"Failed to fetch news. HTTP Status Code: {response.status_code}")
+            return []
     except Exception as e:
         st.error(f"Error fetching market news: {e}")
         return []
@@ -174,7 +182,10 @@ if run_prediction and ticker in valid_tickers:
     # News section in sidebar
     st.sidebar.subheader("📰 Latest Market News")
     news_links = fetch_market_news()
-    for title, link in news_links:
-        st.sidebar.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+    if news_links:
+        for title, link in news_links:
+            st.sidebar.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+    else:
+        st.sidebar.write("⚠ No news available at the moment.")
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
