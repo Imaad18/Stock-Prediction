@@ -1,8 +1,8 @@
 # Ensure nltk is installed and VADER lexicon is downloaded
 import nltk
-nltk.download('vader_lexicon')  # This will download the necessary lexicon for VADER sentiment analysis
+# nltk.download('vader_lexicon')  # Remove sentiment analysis
 
-# Your existing code for stock prediction and sentiment analysis follows...
+# Your existing code for stock prediction follows...
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -17,7 +17,6 @@ import concurrent.futures
 import time
 import requests
 from datetime import datetime
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from matplotlib.animation import FuncAnimation
 
 # Load stock data
@@ -42,12 +41,6 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-# Sentiment analysis using VADER
-def analyze_sentiment(text):
-    analyzer = SentimentIntensityAnalyzer()
-    sentiment_score = analyzer.polarity_scores(text)
-    return sentiment_score['compound']
-
 # Fetch general stock market news
 def fetch_market_news():
     try:
@@ -60,8 +53,7 @@ def fetch_market_news():
                 for news_item in item.get("news", [])[:5]:
                     title = news_item.get("title", "Untitled")
                     link = news_item.get("link", "#")
-                    sentiment_score = analyze_sentiment(title)
-                    news_links.append((title, link, sentiment_score))
+                    news_links.append((title, link))
             return news_links
     except:
         return []
@@ -180,11 +172,10 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    # News section with sentiment analysis
-    st.subheader("📰 Latest Market News with Sentiment")
+    # News section (without sentiment analysis)
+    st.subheader("📰 Latest Market News")
     news_links = fetch_market_news()
-    for title, link, sentiment_score in news_links:
-        sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
-        st.markdown(f"**{sentiment}** - <a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+    for title, link in news_links:
+        st.markdown(f"**{title}** - <a href='{link}' target='_blank'>{link}</a>", unsafe_allow_html=True)
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
