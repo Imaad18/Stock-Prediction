@@ -1,8 +1,4 @@
-# Ensure nltk is installed and VADER lexicon is downloaded
 import nltk
-# nltk.download('vader_lexicon')  # Remove sentiment analysis
-
-# Your existing code for stock prediction follows...
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -17,19 +13,20 @@ import concurrent.futures
 import time
 import requests
 from datetime import datetime
-from matplotlib.animation import FuncAnimation
 
-# Load stock data
-@st.cache_data(ttl=3600, show_spinner=False)
+# Temporarily remove sentiment analysis dependency
+# nltk.download('vader_lexicon')  # Remove sentiment analysis if you don't need it
+
+# Load stock data (No caching for now to simplify debugging)
 def load_data(ticker, start_date, end_date):
     try:
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
         return df[["Open", "High", "Low", "Close", "Volume"]] if not df.empty else None
-    except:
+    except Exception as e:
+        st.error(f"Error loading data for {ticker}: {e}")
         return None
 
-# LSTM model
-@st.cache_resource(show_spinner=False)
+# LSTM model creation
 def create_model(input_shape):
     model = Sequential([
         LSTM(50, return_sequences=True, input_shape=input_shape),
@@ -55,7 +52,8 @@ def fetch_market_news():
                     link = news_item.get("link", "#")
                     news_links.append((title, link))
             return news_links
-    except:
+    except Exception as e:
+        st.error(f"Error fetching market news: {e}")
         return []
     return []
 
@@ -75,14 +73,17 @@ with st.sidebar:
 # Prepare tickers
 all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
 
-# Parallel fetching
+# Parallel fetching of stock data
 start_time = time.time()
 with concurrent.futures.ThreadPoolExecutor() as executor:
     futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
     data = {}
     for future in concurrent.futures.as_completed(futures):
-        ticker_result = futures[future]
-        data[ticker_result] = future.result()
+        try:
+            ticker_result = futures[future]
+            data[ticker_result] = future.result()
+        except Exception as e:
+            st.error(f"Error loading data for {ticker_result}: {str(e)}")
 
 valid_tickers = {k: v for k, v in data.items() if v is not None}
 invalid_tickers = set(all_tickers) - set(valid_tickers.keys())
@@ -94,13 +95,14 @@ if not valid_tickers:
     st.error("❌ No valid stock data available.")
     st.stop()
 
-# Main stock table
+# Display stock data
 if run_prediction:
     main_df = valid_tickers.get(ticker)
     if main_df is not None:
         with st.expander(f"📊 {ticker} Stock Data (Last 20 Days)"):
             st.dataframe(main_df.tail(20))
 
+# Main prediction logic
 if run_prediction and ticker in valid_tickers:
     df = valid_tickers[ticker]
     if len(df) < 100:
@@ -108,11 +110,11 @@ if run_prediction and ticker in valid_tickers:
         st.stop()
 
     progress_bar = st.progress(0)
-    
+
     scaler = MinMaxScaler()
     scaled_data = scaler.fit_transform(df[['Close']])
     progress_bar.progress(20)
-    
+
     seq_length = 60
     x, y = [], []
     for i in range(seq_length, len(scaled_data)):
@@ -121,7 +123,7 @@ if run_prediction and ticker in valid_tickers:
     x, y = np.array(x), np.array(y)
     x = x.reshape((x.shape[0], x.shape[1], 1))
     progress_bar.progress(40)
-    
+
     split = int(0.8 * len(x))
     x_train, x_test = x[:split], x[split:]
     y_train, y_test = y[:split], y[split:]
@@ -139,19 +141,15 @@ if run_prediction and ticker in valid_tickers:
     progress_bar.progress(100)
 
     st.subheader(f"📈 {ticker} Price Prediction (RMSE: {rmse:.2f})")
-    
-    # Plot with Animation
+
+    # Static plot for now (disable animation for debugging)
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(df.index[split+seq_length:], actual_prices, label="Actual", color='blue')
+    ax.plot(df.index[split+seq_length:], predicted_prices, label="Predicted", color='red')
     ax.set_title(f"{ticker} Stock Price Prediction (RMSE: {rmse:.2f})")
     ax.set_xlabel("Date")
     ax.set_ylabel("Price (USD)")
-
-    def update(frame):
-        ax.plot(df.index[split+seq_length:frame], predicted_prices[:frame], label="Predicted", color='red')
-        return ax,
-
-    ani = FuncAnimation(fig, update, frames=len(predicted_prices), blit=False, interval=100)
+    ax.legend()
     st.pyplot(fig)
 
     # Download button
@@ -163,7 +161,7 @@ if run_prediction and ticker in valid_tickers:
     csv = pred_df.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Download Predictions as CSV", csv, file_name=f"{ticker}_predictions.csv")
 
-    # Comparison chart
+    # Comparison chart for multiple tickers
     if len(valid_tickers) > 1:
         st.subheader("📊 Stock Price Comparison")
         fig_comp, ax_comp = plt.subplots(figsize=(10, 5))
@@ -172,7 +170,7 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    # News section (without sentiment analysis)
+    # News section
     st.subheader("📰 Latest Market News")
     news_links = fetch_market_news()
     for title, link in news_links:
