@@ -10,9 +10,9 @@ from keras.layers import Dense, LSTM, Dropout
 from sklearn.metrics import mean_squared_error
 import concurrent.futures
 import time
-from datetime import datetime
 import requests
-from bs4 import BeautifulSoup
+from datetime import datetime
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from matplotlib.animation import FuncAnimation
 
 # Load stock data
@@ -37,24 +37,30 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-# Scraping Stock Market News from Yahoo Finance
+# Sentiment analysis using VADER
+def analyze_sentiment(text):
+    analyzer = SentimentIntensityAnalyzer()
+    sentiment_score = analyzer.polarity_scores(text)
+    return sentiment_score['compound']
+
+# Fetch general stock market news
 def fetch_market_news():
     try:
-        url = "https://finance.yahoo.com/quote/{}/news?p={}"
-        news_links = []
-        response = requests.get(url.format(ticker, ticker))
-        soup = BeautifulSoup(response.text, 'html.parser')
-        news_section = soup.find_all('li', {'class': 'js-stream-content'})
-        
-        for item in news_section[:5]:
-            title = item.find('h3').text if item.find('h3') else "No title"
-            link = item.find('a')['href'] if item.find('a') else "#"
-            news_links.append((title, "https://finance.yahoo.com" + link if link != "#" else "#"))
-        
-        return news_links
-    except Exception as e:
-        print("Error fetching news:", e)
+        url = "https://query1.finance.yahoo.com/v1/finance/trending/US"
+        response = requests.get(url)
+        if response.status_code == 200:
+            results = response.json()
+            news_links = []
+            for item in results.get("finance", {}).get("result", []):
+                for news_item in item.get("news", [])[:5]:
+                    title = news_item.get("title", "Untitled")
+                    link = news_item.get("link", "#")
+                    sentiment_score = analyze_sentiment(title)
+                    news_links.append((title, link, sentiment_score))
+            return news_links
+    except:
         return []
+    return []
 
 # App UI
 st.set_page_config(page_title="Stock Predictor AI", layout="wide")
@@ -95,7 +101,7 @@ if not valid_tickers:
 if run_prediction:
     main_df = valid_tickers.get(ticker)
     if main_df is not None:
-        with st.expander(f"📊 {ticker} Stock Data (Last 20 Days)") :
+        with st.expander(f"📊 {ticker} Stock Data (Last 20 Days)"):
             st.dataframe(main_df.tail(20))
 
 if run_prediction and ticker in valid_tickers:
@@ -169,12 +175,11 @@ if run_prediction and ticker in valid_tickers:
         ax_comp.legend()
         st.pyplot(fig_comp)
 
-    # News section
-    st.subheader("📰 Latest Market News")
+    # News section with sentiment analysis
+    st.subheader("📰 Latest Market News with Sentiment")
     news_links = fetch_market_news()
-    if not news_links:
-        st.write("⚠ No news found.")
-    for title, link in news_links:
-        st.markdown(f"<a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
+    for title, link, sentiment_score in news_links:
+        sentiment = "Positive" if sentiment_score > 0 else "Negative" if sentiment_score < 0 else "Neutral"
+        st.markdown(f"**{sentiment}** - <a href='{link}' target='_blank'>{title}</a>", unsafe_allow_html=True)
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
