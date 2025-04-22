@@ -1,15 +1,14 @@
 # Live Demo in Form of App
 https://stock-prediction-ajqgijnbycusph8ttbc6qf.streamlit.app/
 
-# AI-Powered Stock Price Prediction and Market Insights
+# Stock Price Prediction App
 
-This project is an AI-powered stock price prediction app built with **Streamlit**, using **LSTM (Long Short-Term Memory)** for price prediction and **Sentiment Analysis** to analyze the latest stock news. The app also displays technical indicators and provides options for downloading predictions.
+# Overview
+This Streamlit application uses deep learning (LSTM) to predict stock prices based on historical data. It allows users to visualize and compare multiple stocks and provides predictions for the main selected stock.
+Features
 
-## Features
-
-- **Stock Prediction:** Predicts the stock price using LSTM.
-- **Stock Price Visualization:** Displays the actual vs predicted stock prices with a dynamic graph.
-- **Sentiment Analysis:** Analyzes sentiment for stock news using the VADER sentiment analysis tool.
-- **News Links:** Provides the latest stock news and their sentiment score.
-- **Stock Comparison:** Allows comparing multiple stocks at once.
-- **Downloadable Data:** Allows downloading the predicted data in CSV format.
+* Stock Price Prediction: Uses LSTM neural networks to predict future stock prices
+* Multi-Stock Comparison: Compare price trends across multiple stocks simultaneously
+* Complete Market Data: View Open, High, Low, Close, and Volume data for selected stocks
+* Interactive UI: User-friendly interface with customizable parameters
+* Resource Links: Quick access to popular financial websites for additional stock research
