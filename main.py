@@ -17,11 +17,16 @@ start_time = time.time()
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
     try:
+        if not isinstance(ticker, str) or not ticker.strip():
+            return None
+            
+        ticker = ticker.strip()  # Ensure no whitespace
+        
         # Add 1 day to end_date to ensure we get the most recent data
         df = yf.download(ticker, start=start_date, end=end_date + timedelta(days=1), progress=False)
         return df if not df.empty else None
     except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
+        st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
 # Function to create a linear regression model
@@ -33,6 +38,9 @@ def create_linear_model(X_train, y_train):
 # Function to calculate technical indicators manually
 def calculate_indicators(df):
     try:
+        if df is None or len(df) < 10:
+            return df
+            
         # Create a copy to avoid modifying original dataframe
         df_copy = df.copy()
         
@@ -72,7 +80,7 @@ def calculate_indicators(df):
 
 # Function to detect patterns and technical events
 def detect_patterns(df):
-    if len(df) < 100:
+    if df is None or len(df) < 100:
         return None, None
     
     patterns = {}
@@ -84,7 +92,7 @@ def detect_patterns(df):
         # Drop NaN values
         df_analysis = df_analysis.dropna()
         
-        if len(df_analysis) < 2:
+        if df_analysis is None or len(df_analysis) < 2:
             return None, None
         
         # Detect basic patterns
@@ -92,10 +100,10 @@ def detect_patterns(df):
         # Moving average crossovers - ensure we're comparing scalar values
         if 'SMA20' in df_analysis.columns and 'SMA50' in df_analysis.columns:
             # Get scalar values instead of Series objects
-            sma20_prev = df_analysis['SMA20'].iloc[-2]
-            sma50_prev = df_analysis['SMA50'].iloc[-2]
-            sma20_curr = df_analysis['SMA20'].iloc[-1]
-            sma50_curr = df_analysis['SMA50'].iloc[-1]
+            sma20_prev = float(df_analysis['SMA20'].iloc[-2])
+            sma50_prev = float(df_analysis['SMA50'].iloc[-2])
+            sma20_curr = float(df_analysis['SMA20'].iloc[-1])
+            sma50_curr = float(df_analysis['SMA50'].iloc[-1])
             
             if sma20_prev < sma50_prev and sma20_curr > sma50_curr:
                 patterns['Golden Cross'] = {
@@ -163,7 +171,7 @@ def detect_patterns(df):
         
         # Trend strength
         last_20_days = df_analysis['Close'].iloc[-20:].values
-        price_change = (last_20_days[-1] - last_20_days[0]) / last_20_days[0]
+        price_change = (float(last_20_days[-1]) - float(last_20_days[0])) / float(last_20_days[0])
         
         if price_change > 0.10:  # 10% up in 20 days
             patterns['Strong Uptrend'] = {
@@ -228,7 +236,7 @@ if 'alerts' not in st.session_state:
 # Sidebar inputs
 with st.sidebar:
     st.header("Input Parameters")
-    ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
+    ticker = st.text_input("Main Stock Ticker", "AAPL").upper().strip()
     compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
@@ -240,7 +248,9 @@ with st.sidebar:
 tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
 
 # Get all tickers to fetch
-all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
+all_tickers = [ticker]
+if compare_tickers:
+    all_tickers += [t.strip() for t in compare_tickers.split(",") if t.strip()]
 all_tickers = list(set(all_tickers))  # Remove duplicates
 
 # Fetch data in parallel
@@ -272,7 +282,7 @@ with tabs[2]:
     st.write("Set alerts for specific price levels or conditions.")
     
     if ticker in valid_tickers:
-        current_price = valid_tickers[ticker]['Close'].iloc[-1]
+        current_price = float(valid_tickers[ticker]['Close'].iloc[-1])
         
         col1, col2 = st.columns(2)
         
@@ -379,7 +389,7 @@ with tabs[1]:
                                 if pattern_date in df_ta.index:
                                     idx = df_ta.index.get_loc(pattern_date)
                                     if idx > 0 and idx < len(df_ta):
-                                        price = df_ta['Close'].iloc[idx]
+                                        price = float(df_ta['Close'].iloc[idx])
                                         if details['type'] == 'bullish':
                                             ax.plot(pattern_date, price, 'go', markersize=10)
                                         elif details['type'] == 'bearish':
@@ -467,7 +477,7 @@ with tabs[0]:
                     # Predict future price
                     last_window = df['Close'].iloc[-window_size:].values
                     last_window_2d = last_window.reshape(1, -1)  # Reshape for prediction
-                    future_prediction = model.predict(last_window_2d)[0]
+                    future_prediction = float(model.predict(last_window_2d)[0])
                     
                     # Create index for test data
                     test_index = df.index[split + window_size:]
@@ -520,8 +530,8 @@ with tabs[0]:
                             # Normalize all prices to same scale for better comparison
                             for t, df_t in valid_tickers.items():
                                 # Convert to percentage change from first day
-                                normalized = df_t['Close'] / df_t['Close'].iloc[0] * 100
-                                ax_comp.plot(df_t.index, normalized, label=f"{t} ({df_t['Close'].iloc[-1]:.2f})")
+                                normalized = df_t['Close'] / float(df_t['Close'].iloc[0]) * 100
+                                ax_comp.plot(df_t.index, normalized, label=f"{t} ({float(df_t['Close'].iloc[-1]):.2f})")
                                 
                             ax_comp.set_title("Normalized Stock Price Comparison (Base=100)")
                             ax_comp.legend()
