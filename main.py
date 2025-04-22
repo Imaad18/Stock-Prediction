@@ -48,8 +48,9 @@ def calculate_indicators(df):
         delta = df_copy['Close'].diff()
         gain = delta.copy()
         loss = delta.copy()
-        gain[gain < 0] = 0
-        loss[loss > 0] = 0
+        # Use .loc instead of direct assignment to avoid Series truth value is ambiguous error
+        gain.loc[gain < 0] = 0
+        loss.loc[loss > 0] = 0
         loss = abs(loss)
         
         avg_gain = gain.rolling(window=14).mean()
@@ -85,16 +86,22 @@ def detect_patterns(df):
         
         # Detect basic patterns
         
-        # Moving average crossovers
+        # Moving average crossovers - ensure we're comparing scalar values
         if 'SMA20' in df_analysis.columns and 'SMA50' in df_analysis.columns:
-            if df_analysis['SMA20'].iloc[-2] < df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] > df_analysis['SMA50'].iloc[-1]:
+            # Get scalar values instead of Series objects
+            sma20_prev = df_analysis['SMA20'].iloc[-2]
+            sma50_prev = df_analysis['SMA50'].iloc[-2]
+            sma20_curr = df_analysis['SMA20'].iloc[-1]
+            sma50_curr = df_analysis['SMA50'].iloc[-1]
+            
+            if sma20_prev < sma50_prev and sma20_curr > sma50_curr:
                 patterns['Golden Cross'] = {
                     'type': 'bullish',
                     'desc': 'Short-term momentum is turning positive (20-day SMA crossed above 50-day SMA)',
                     'date': df_analysis.index[-1].strftime('%Y-%m-%d')
                 }
             
-            if df_analysis['SMA20'].iloc[-2] > df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] < df_analysis['SMA50'].iloc[-1]:
+            if sma20_prev > sma50_prev and sma20_curr < sma50_curr:
                 patterns['Death Cross'] = {
                     'type': 'bearish',
                     'desc': 'Short-term momentum is turning negative (20-day SMA crossed below 50-day SMA)',
@@ -102,46 +109,52 @@ def detect_patterns(df):
                 }
         
         # Support/Resistance
-        last_close = df_analysis['Close'].iloc[-1]
+        last_close = float(df_analysis['Close'].iloc[-1])
         
         # Check if price is near SMA200 (potential support/resistance)
         if 'SMA200' in df_analysis.columns:
-            distance_to_sma200 = abs(last_close - df_analysis['SMA200'].iloc[-1]) / last_close
+            sma200_value = float(df_analysis['SMA200'].iloc[-1])
+            distance_to_sma200 = abs(last_close - sma200_value) / last_close
             if distance_to_sma200 < 0.03:  # Within 3%
                 patterns['Key Level'] = {
                     'type': 'neutral',
-                    'desc': f'Price is near 200-day SMA (${df_analysis["SMA200"].iloc[-1]:.2f}), a key support/resistance level',
+                    'desc': f'Price is near 200-day SMA (${sma200_value:.2f}), a key support/resistance level',
                     'date': df_analysis.index[-1].strftime('%Y-%m-%d')
                 }
         
-        # Bollinger Band signals
-        if 'Upper_Band' in df_analysis.columns and df_analysis['Close'].iloc[-1] > df_analysis['Upper_Band'].iloc[-1]:
-            patterns['Overbought'] = {
-                'type': 'bearish',
-                'desc': 'Price is above upper Bollinger Band, potentially overbought',
-                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-            }
+        # Bollinger Band signals - use scalar values
+        if 'Upper_Band' in df_analysis.columns:
+            upper_band = float(df_analysis['Upper_Band'].iloc[-1])
+            if last_close > upper_band:
+                patterns['Overbought'] = {
+                    'type': 'bearish',
+                    'desc': 'Price is above upper Bollinger Band, potentially overbought',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
         
-        if 'Lower_Band' in df_analysis.columns and df_analysis['Close'].iloc[-1] < df_analysis['Lower_Band'].iloc[-1]:
-            patterns['Oversold'] = {
-                'type': 'bullish',
-                'desc': 'Price is below lower Bollinger Band, potentially oversold',
-                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-            }
+        if 'Lower_Band' in df_analysis.columns:
+            lower_band = float(df_analysis['Lower_Band'].iloc[-1])
+            if last_close < lower_band:
+                patterns['Oversold'] = {
+                    'type': 'bullish',
+                    'desc': 'Price is below lower Bollinger Band, potentially oversold',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
         
-        # RSI signals
+        # RSI signals - use scalar values
         if 'RSI' in df_analysis.columns:
-            if df_analysis['RSI'].iloc[-1] > 70:
+            rsi_value = float(df_analysis['RSI'].iloc[-1])
+            if rsi_value > 70:
                 patterns['RSI Overbought'] = {
                     'type': 'bearish',
-                    'desc': f'RSI is overbought at {df_analysis["RSI"].iloc[-1]:.1f}',
+                    'desc': f'RSI is overbought at {rsi_value:.1f}',
                     'date': df_analysis.index[-1].strftime('%Y-%m-%d')
                 }
             
-            if df_analysis['RSI'].iloc[-1] < 30:
+            if rsi_value < 30:
                 patterns['RSI Oversold'] = {
                     'type': 'bullish',
-                    'desc': f'RSI is oversold at {df_analysis["RSI"].iloc[-1]:.1f}',
+                    'desc': f'RSI is oversold at {rsi_value:.1f}',
                     'date': df_analysis.index[-1].strftime('%Y-%m-%d')
                 }
         
@@ -168,362 +181,57 @@ def detect_patterns(df):
         st.error(f"Error detecting patterns: {str(e)}")
         return {}, df  # Return empty patterns if detection fails
 
-# Helper function to load and save alerts
-def get_alerts():
-    if 'alerts' not in st.session_state:
-        st.session_state.alerts = {}
-    return st.session_state.alerts
-
-def save_alert(ticker, alert_type, price, active=True):
-    alerts = get_alerts()
-    if ticker not in alerts:
-        alerts[ticker] = []
+# Prediction tab content - Fix for LinearRegression reshaping
+# Add this to the relevant part of your tabs[0] section:
+def create_prediction_model(df):
+    window_size = 30
+    X = []
+    y = []
     
-    # Add new alert
-    alerts[ticker].append({
-        'type': alert_type,
-        'price': float(price),
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'active': active,
-        'triggered': False
-    })
+    for i in range(window_size, len(df)):
+        X.append(df['Close'].iloc[i-window_size:i].values)
+        y.append(df['Close'].iloc[i])
     
-    # Update session state
-    st.session_state.alerts = alerts
-
-def delete_alert(ticker, alert_index):
-    alerts = get_alerts()
-    if ticker in alerts and alert_index < len(alerts[ticker]):
-        alerts[ticker].pop(alert_index)
-        st.session_state.alerts = alerts
-        return True
-    return False
-
-# Streamlit App
-st.title("⚡ Stock Analysis and Prediction")
-
-# Initialize session state
-if 'tab' not in st.session_state:
-    st.session_state.tab = "Prediction"
-
-if 'alerts' not in st.session_state:
-    st.session_state.alerts = {}
-
-# Sidebar inputs
-with st.sidebar:
-    st.header("Input Parameters")
-    ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
-    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
-    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", datetime.now())
+    X = np.array(X)
+    y = np.array(y)
     
-    # Add a button to trigger the prediction
-    run_prediction = st.button("Run Analysis", type="primary")
-
-# Create tabs
-tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
-
-# Get all tickers to fetch
-all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
-all_tickers = list(set(all_tickers))  # Remove duplicates
-
-# Fetch data in parallel
-start_time = time.time()
-valid_tickers = {}
-invalid_tickers = set()
-
-with st.spinner("Loading stock data..."):
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
-        data = {}
-        for future in concurrent.futures.as_completed(futures):
-            ticker_name = futures[future]
-            result = future.result()
-            if result is not None and not result.empty:
-                valid_tickers[ticker_name] = result
-            else:
-                invalid_tickers.add(ticker_name)
-
-if invalid_tickers:
-    st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
-
-if not valid_tickers:
-    st.error("No valid stock data available. Please check your inputs.")
-    st.stop()
-
-# Process alerts
-with tabs[2]:
-    st.header("Price Alerts")
-    st.write("Set alerts for specific price levels or conditions.")
+    # Ensure we have enough data
+    if len(X) == 0 or len(y) == 0:
+        return None, None, None, None
     
-    if ticker in valid_tickers:
-        current_price = valid_tickers[ticker]['Close'].iloc[-1]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            alert_type = st.selectbox(
-                "Alert Type", 
-                ["Price Above", "Price Below"]
-            )
-        
-        with col2:
-            alert_price = st.number_input(
-                "Target Price", 
-                min_value=0.01, 
-                value=float(current_price),
-                format="%.2f"
-            )
-        
-        if st.button("Add Alert"):
-            save_alert(ticker, alert_type, alert_price)
-            st.success(f"Alert added for {ticker}: {alert_type} ${alert_price:.2f}")
+    # Train-test split (80% train, 20% test)
+    split = int(0.8 * len(X))
+    if split == 0:
+        split = 1  # Ensure at least one training sample
     
-    # Display existing alerts
-    alerts = get_alerts()
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
     
-    if not any(alerts.values()):
-        st.info("No alerts set. Add your first alert above.")
-    else:
-        for t, ticker_alerts in alerts.items():
-            if ticker_alerts:
-                st.subheader(f"{t} Alerts")
-                
-                for i, alert in enumerate(ticker_alerts):
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    
-                    with col1:
-                        status = "✅" if alert['triggered'] else "⏳"
-                        st.write(f"{status} **{alert['type']}**: ${alert['price']:.2f}")
-                    
-                    with col2:
-                        st.write(f"Created: {alert['created_at']}")
-                    
-                    with col3:
-                        if st.button("Delete", key=f"del_{t}_{i}"):
-                            if delete_alert(t, i):
-                                st.success(f"Alert deleted")
-                                time.sleep(0.5)  # Give time for the success message to appear
-                                st.rerun()
-
-# Pattern Recognition tab
-with tabs[1]:
-    st.header("Technical Patterns & Events")
+    # Important: Reshape for LinearRegression
+    X_train_2d = X_train.reshape(X_train.shape[0], -1)
+    X_test_2d = X_test.reshape(X_test.shape[0], -1)
     
-    if ticker in valid_tickers:
-        df = valid_tickers[ticker]
-        
-        # Detect patterns
-        with st.spinner("Analyzing patterns..."):
-            result = detect_patterns(df)
-            
-        if result is not None:
-            patterns, df_ta = result
-            
-            if patterns and len(patterns) > 0:
-                # Display patterns in cards
-                for pattern_name, details in patterns.items():
-                    col1, col2 = st.columns([1, 3])
-                    
-                    with col1:
-                        if details['type'] == 'bullish':
-                            st.markdown("### 🟢")
-                        elif details['type'] == 'bearish':
-                            st.markdown("### 🔴")
-                        else:
-                            st.markdown("### ⚪")
-                    
-                    with col2:
-                        st.subheader(pattern_name)
-                        st.write(details['desc'])
-                        st.caption(f"Detected on {details['date']}")
-                    
-                    st.divider()
-            else:
-                st.info("No significant patterns detected in the current timeframe.")
-            
-            # Display technical indicators if df_ta is not None
-            if df_ta is not None and not df_ta.empty:
-                st.subheader("Technical Indicators")
-                
-                try:
-                    # Create indicator chart
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    ax.plot(df_ta.index, df_ta['Close'], label='Price')
-                    
-                    # Only plot SMAs if they exist in the dataframe
-                    for sma_column, label in [('SMA20', '20-day SMA'), ('SMA50', '50-day SMA'), ('SMA200', '200-day SMA')]:
-                        if sma_column in df_ta.columns:
-                            ax.plot(df_ta.index, df_ta[sma_column], label=label, linestyle='--')
-                    
-                    # Highlighting potential patterns
-                    if patterns and len(patterns) > 0:
-                        for pattern, details in patterns.items():
-                            try:
-                                pattern_date = pd.to_datetime(details['date'])
-                                if pattern_date in df_ta.index:
-                                    idx = df_ta.index.get_loc(pattern_date)
-                                    if idx > 0 and idx < len(df_ta):
-                                        price = df_ta['Close'].iloc[idx]
-                                        if details['type'] == 'bullish':
-                                            ax.plot(pattern_date, price, 'go', markersize=10)
-                                        elif details['type'] == 'bearish':
-                                            ax.plot(pattern_date, price, 'ro', markersize=10)
-                                        else:
-                                            ax.plot(pattern_date, price, 'ko', markersize=10)
-                            except Exception as e:
-                                st.error(f"Error highlighting pattern {pattern}: {str(e)}")
-                    
-                    ax.set_title(f"{ticker} Price with Moving Averages")
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    st.pyplot(fig)
-                except Exception as e:
-                    st.error(f"Error creating technical indicators chart: {str(e)}")
-        else:
-            st.info("Not enough data to analyze patterns. Select a longer time period.")
+    # Create and train model
+    model = LinearRegression()
+    model.fit(X_train_2d, y_train)
+    
+    # Make predictions
+    predictions = model.predict(X_test_2d)
+    
+    return model, X_test_2d, y_test, predictions, split, window_size
 
-# Prediction tab content
-with tabs[0]:
-    # Show main stock data quickly
-    if run_prediction:
-        main_df = valid_tickers.get(ticker)
-        if main_df is not None:
-            with st.expander(f"📊 {ticker} Complete Stock Data (Last 20 Days)"):
-                # Show full data table with all columns
-                st.dataframe(main_df.tail(20))
-
-    # Prediction only runs when button is clicked and we have enough data
-    if run_prediction and ticker in valid_tickers:
-        df = valid_tickers[ticker][["Close"]]  # Use only Close for prediction
-        if len(df) < 60:
-            st.warning("Not enough data for prediction. Please select a longer time period.")
-        else:
-            try:
-                # Progress bar for user feedback
-                progress_bar = st.progress(0)
-                
-                # Create features (using last 30 days to predict next day)
-                window_size = 30
-                X = []
-                y = []
-                
-                for i in range(window_size, len(df)):
-                    X.append(df['Close'].iloc[i-window_size:i].values)
-                    y.append(df['Close'].iloc[i])
-                
-                X = np.array(X)
-                y = np.array(y)
-                
-                # Ensure we have enough data
-                if len(X) == 0 or len(y) == 0:
-                    st.warning("Not enough data points to create training sequences.")
-                    if progress_bar:
-                        progress_bar.empty()
-                else:
-                    progress_bar.progress(30)
-                    
-                    # Train-test split (80% train, 20% test)
-                    split = int(0.8 * len(X))
-                    if split == 0:
-                        split = 1  # Ensure at least one training sample
-                    
-                    X_train, X_test = X[:split], X[split:]
-                    y_train, y_test = y[:split], y[split:]
-                    
-                    # Create and train a linear regression model
-                    with st.spinner("Training prediction model..."):
-                        model = create_linear_model(X_train, y_train)
-                    
-                    progress_bar.progress(60)
-                    
-                    # Make predictions
-                    predictions = model.predict(X_test)
-                    
-                    # Calculate RMSE
-                    rmse = np.sqrt(mean_squared_error(y_test, predictions))
-                    
-                    progress_bar.progress(80)
-                    
-                    # Predict future price
-                    last_window = df['Close'].iloc[-window_size:].values
-                    future_prediction = model.predict([last_window])[0]
-                    
-                    # Create index for test data
-                    test_index = df.index[split + window_size:]
-                    
-                    # Plot results
-                    fig, ax = plt.subplots(figsize=(10, 5))
-                    
-                    # Plot actual prices
-                    ax.plot(test_index, y_test, 'b-', label='Actual')
-                    
-                    # Plot predicted prices
-                    ax.plot(test_index, predictions, 'r--', label='Predicted')
-                    
-                    # Add alerts if any exist for this ticker
-                    alerts = get_alerts()
-                    if ticker in alerts and alerts[ticker]:
-                        for alert in alerts[ticker]:
-                            if alert['active']:
-                                try:
-                                    # Draw horizontal line for the alert
-                                    ax.axhline(y=alert['price'], color='g', linestyle='-', alpha=0.5)
-                                    # Add annotation
-                                    ax.text(test_index[len(test_index) // 2], alert['price'], 
-                                        f" {alert['type']} ${alert['price']:.2f}", 
-                                        verticalalignment='bottom', color='green')
-                                except Exception as e:
-                                    st.warning(f"Could not display alert: {str(e)}")
-                    
-                    ax.set_title(f"{ticker} Price Prediction (RMSE: {rmse:.2f})")
-                    ax.legend()
-                    progress_bar.progress(100)
-                    st.pyplot(fig)
-                    
-                    # Show prediction for next day
-                    st.subheader("Price Prediction")
-                    
-                    last_actual_price = df['Close'].iloc[-1]
-                    price_change = ((future_prediction - last_actual_price) / last_actual_price) * 100
-                    
-                    direction = "📈" if price_change > 0 else "📉"
-                    st.write(f"### Next Trading Day Prediction: ${future_prediction:.2f} {direction}")
-                    st.write(f"Expected change: {price_change:.2f}% from current price (${last_actual_price:.2f})")
-                    
-                    # Show comparison charts if other tickers exist
-                    if len(valid_tickers) > 1:
-                        st.subheader("Market Comparison")
-                        try:
-                            fig_comp, ax_comp = plt.subplots(figsize=(10, 5))
-                            
-                            # Normalize all prices to same scale for better comparison
-                            for t, df_t in valid_tickers.items():
-                                # Convert to percentage change from first day
-                                normalized = df_t['Close'] / df_t['Close'].iloc[0] * 100
-                                ax_comp.plot(df_t.index, normalized, label=f"{t} ({df_t['Close'].iloc[-1]:.2f})")
-                                
-                            ax_comp.set_title("Normalized Stock Price Comparison (Base=100)")
-                            ax_comp.legend()
-                            ax_comp.grid(True, alpha=0.3)
-                            st.pyplot(fig_comp)
-                        except Exception as e:
-                            st.error(f"Error creating comparison chart: {str(e)}")
-            except Exception as e:
-                st.error(f"Error during prediction: {str(e)}")
-
-# Show latest prices in sidebar
-with st.sidebar:
+# Fix for sidebar latest prices display
+def display_latest_prices(valid_tickers):
     st.header("Latest Prices")
     for t, df_t in valid_tickers.items():
         if not df_t.empty:
             try:
-                # Get the latest price
-                last_price = df_t['Close'].iloc[-1]
+                # Get the latest price and ensure it's a float
+                last_price = float(df_t['Close'].iloc[-1])
                 
                 # Calculate price change percentage
                 if len(df_t) > 1:
-                    prev_price = df_t['Close'].iloc[-2]
+                    prev_price = float(df_t['Close'].iloc[-2])
                     price_delta = f"{((last_price - prev_price) / prev_price) * 100:.2f}%"
                 else:
                     price_delta = None
@@ -546,12 +254,14 @@ with st.sidebar:
                 # Display price, with alert if triggered
                 if alert_triggered:
                     st.warning(alert_message)
-                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=price_delta)
+                    st.metric(label=t, value=f"${last_price:.2f}", delta=price_delta)
                 else:
-                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=price_delta)
+                    st.metric(label=t, value=f"${last_price:.2f}", delta=price_delta)
                     
             except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
+    
+        
     
     # Add stock information websites
     st.sidebar.header("Stock Resources")
