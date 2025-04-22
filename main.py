@@ -184,33 +184,36 @@ def main():
     # Initialize session state
     if 'tab' not in st.session_state:
         st.session_state.tab = "Prediction"
+
+     # Sidebar inputs
+with st.sidebar:
+    st.header("Input Parameters")
+    ticker = st.text_input("Stock Ticker", "AAPL").upper()
+    compare_tickers = st.text_input("Compare With", "MSFT,GOOG").upper()
+    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
+    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+    run_prediction = st.button("Run Analysis", type="primary")
     
-    # Sidebar inputs
-    with st.sidebar:
-        st.header("Input Parameters")
-        ticker = st.text_input("Stock Ticker", "AAPL").upper()
-        compare_tickers = st.text_input("Compare With", "MSFT,GOOG").upper()
-        start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-        end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
-        run_prediction = st.button("Run Analysis", type="primary")
-        
-        # Display latest prices
-        st.header("Latest Prices")
-        if 'data' in st.session_state:
-            for t, df_t in st.session_state.data.items():
-                if not df_t.empty:
-                    last_price = df_t['Close'].iloc[-1]
-                    alerts = get_alerts()
-                    alert_msg = ""
-                    
-                    if t in alerts:
-                        for alert in alerts[t]:
-                            if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
-                               (alert['type'] == 'Price Below' and last_price < alert['price']):
-                                alert_msg = f"⚠️ {alert['type']} ${alert['price']:.2f}"
-                    
-                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_msg)
-        
+    # Display latest prices
+    st.header("Latest Prices")
+    if 'data' in st.session_state:
+        for t, df_t in st.session_state.data.items():
+            if not df_t.empty:
+                last_price = df_t['Close'].iloc[-1]  # Get the last closing price
+                alerts = get_alerts()
+                alert_msg = ""
+                
+                # Check for alerts
+                if t in alerts:
+                    for alert in alerts[t]:
+                        if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
+                           (alert['type'] == 'Price Below' and last_price < alert['price']):
+                            alert_msg = f"⚠️ {alert['type']} ${alert['price']:.2f}"
+                
+                # Display the latest price
+                st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_msg)
+                
+    
         # Stock Research Resources
         st.header("Stock Research Resources")
         st.markdown("""
@@ -235,25 +238,25 @@ def main():
         """)
     
     # Fetch data in parallel
-    all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
-    start_time = time.time()
-    
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
-        data = {}
-        for future in concurrent.futures.as_completed(futures):
-            ticker_name = futures[future]
-            data[ticker_name] = future.result()
-    
-    valid_tickers = {k: v for k, v in data.items() if v is not None}
-    st.session_state.data = valid_tickers
-    
-    if invalid_tickers := set(all_tickers) - set(valid_tickers.keys()):
-        st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
-    
-    if not valid_tickers:
-        st.error("No valid stock data available. Please check your inputs.")
-        st.stop()
+all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
+start_time = time.time()
+
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
+    data = {}
+    for future in concurrent.futures.as_completed(futures):
+        ticker_name = futures[future]
+        data[ticker_name] = future.result()
+
+valid_tickers = {k: v for k, v in data.items() if v is not None}
+st.session_state.data = valid_tickers  # Update session state with valid tickers
+
+if invalid_tickers := set(all_tickers) - set(valid_tickers.keys()):
+    st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
+
+if not valid_tickers:
+    st.error("No valid stock data available. Please check your inputs.")
+    st.stop()
     
     # Create tabs
     tabs = st.tabs(["Prediction", "Technical Analysis", "Price Alerts"])
