@@ -39,7 +39,10 @@ def load_data(ticker, start_date, end_date):
     """Load stock data from Yahoo Finance"""
     try:
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        return df if not df.empty else None
+        if df.empty:
+            st.warning(f"No data found for ticker: {ticker}")
+            return None
+        return df
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
