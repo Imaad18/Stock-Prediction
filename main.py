@@ -60,7 +60,6 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-
 def detect_technical_patterns(df):
     """Detect common technical patterns in stock data"""
     if len(df) < 100:
@@ -148,8 +147,6 @@ def detect_technical_patterns(df):
     
     return patterns
 
-    
-
 def get_alerts():
     """Initialize or retrieve alerts from session state"""
     if 'alerts' not in st.session_state:
@@ -185,19 +182,41 @@ def main():
     if 'tab' not in st.session_state:
         st.session_state.tab = "Prediction"
 
-     # Sidebar inputs
-with st.sidebar:
-    st.header("Input Parameters")
-    ticker = st.text_input("Stock Ticker", "AAPL").upper()
-    compare_tickers = st.text_input("Compare With", "MSFT,GOOG").upper()
-    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
-    run_prediction = st.button("Run Analysis", type="primary")
-    
-    # Display latest prices
-    st.header("Latest Prices")
-    if 'data' in st.session_state:
-        for t, df_t in st.session_state.data.items():
+    # Sidebar inputs
+    with st.sidebar:
+        st.header("Input Parameters")
+        ticker = st.text_input("Stock Ticker", "AAPL").upper()
+        compare_tickers = st.text_input("Compare With", "MSFT,GOOG").upper()
+        start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
+        end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+        run_prediction = st.button("Run Analysis", type="primary")
+        
+        # Display latest prices
+        st.header("Latest Prices")
+        
+        # Fetch data in parallel
+        all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
+        start_time = time.time()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
+            data = {}
+            for future in concurrent.futures.as_completed(futures):
+                ticker_name = futures[future]
+                data[ticker_name] = future.result()
+
+        valid_tickers = {k: v for k, v in data.items() if v is not None}
+        st.session_state.data = valid_tickers  # Update session state with valid tickers
+
+        if invalid_tickers := set(all_tickers) - set(valid_tickers.keys()):
+            st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
+
+        if not valid_tickers:
+            st.error("No valid stock data available. Please check your inputs.")
+            st.stop()
+        
+        # Display current prices for valid tickers
+        for t, df_t in valid_tickers.items():
             if not df_t.empty:
                 last_price = df_t['Close'].iloc[-1]  # Get the last closing price
                 alerts = get_alerts()
@@ -212,8 +231,7 @@ with st.sidebar:
                 
                 # Display the latest price
                 st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_msg)
-                
-    
+        
         # Stock Research Resources
         st.header("Stock Research Resources")
         st.markdown("""
@@ -236,28 +254,9 @@ with st.sidebar:
         - [SEC EDGAR](https://www.sec.gov/edgar/searchedgar/companysearch.html)
         - [Investor.gov](https://www.investor.gov/)
         """)
-    
-    # Fetch data in parallel
-all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
-start_time = time.time()
+        
+        st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
 
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
-    data = {}
-    for future in concurrent.futures.as_completed(futures):
-        ticker_name = futures[future]
-        data[ticker_name] = future.result()
-
-valid_tickers = {k: v for k, v in data.items() if v is not None}
-st.session_state.data = valid_tickers  # Update session state with valid tickers
-
-if invalid_tickers := set(all_tickers) - set(valid_tickers.keys()):
-    st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
-
-if not valid_tickers:
-    st.error("No valid stock data available. Please check your inputs.")
-    st.stop()
-    
     # Create tabs
     tabs = st.tabs(["Prediction", "Technical Analysis", "Price Alerts"])
     
@@ -432,8 +431,6 @@ if not valid_tickers:
                             if st.button("Delete", key=f"del_{ticker_name}_{i}"):
                                 delete_alert(ticker_name, i)
                                 st.rerun()
-    
-    st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
 
 if __name__ == "__main__":
     main()
