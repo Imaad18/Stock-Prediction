@@ -9,17 +9,21 @@ import concurrent.futures
 import time
 from datetime import datetime, timedelta
 
-# TensorFlow imports with error handling
+# ML model imports with error handling
+USE_TENSORFLOW = False
 try:
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import Dense, LSTM, Dropout
+    USE_TENSORFLOW = True
 except ImportError:
     try:
         from keras.models import Sequential
         from keras.layers import Dense, LSTM, Dropout
+        USE_TENSORFLOW = True
     except ImportError:
-        st.error("Could not import TensorFlow/Keras. Please install required packages.")
-        st.stop()
+        st.warning("TensorFlow/Keras not available. Using scikit-learn for predictions instead.")
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.linear_model import LinearRegression
 
 # App configuration
 st.set_page_config(
@@ -48,17 +52,21 @@ def load_data(ticker, start_date, end_date):
         return None
 
 @st.cache_resource(show_spinner=False)
-def create_model(input_shape):
-    """Create LSTM model with given input shape"""
-    model = Sequential([
-        LSTM(50, return_sequences=True, input_shape=input_shape),
-        Dropout(0.2),
-        LSTM(50, return_sequences=False),
-        Dropout(0.2),
-        Dense(1)
-    ])
-    model.compile(optimizer="adam", loss="mse")
-    return model
+def create_model(input_shape=None, use_tensorflow=USE_TENSORFLOW):
+    """Create model based on available libraries"""
+    if use_tensorflow:
+        model = Sequential([
+            LSTM(50, return_sequences=True, input_shape=input_shape),
+            Dropout(0.2),
+            LSTM(50, return_sequences=False),
+            Dropout(0.2),
+            Dense(1)
+        ])
+        model.compile(optimizer="adam", loss="mse")
+        return model
+    else:
+        # Fallback to scikit-learn model
+        return RandomForestRegressor(n_estimators=100, random_state=42)
 
 def detect_technical_patterns(df):
     """Detect common technical patterns in stock data"""
@@ -287,30 +295,59 @@ def main():
                 scaler = MinMaxScaler()
                 scaled_data = scaler.fit_transform(df)
                 
-                # Create sequences
-                seq_length = 60
-                x, y = [], []
-                for i in range(seq_length, len(scaled_data)):
-                    x.append(scaled_data[i-seq_length:i, 0])
-                    y.append(scaled_data[i, 0])
-                
-                x, y = np.array(x), np.array(y)
-                x = x.reshape((x.shape[0], x.shape[1], 1))
-                
-                # Train-test split
-                split = int(0.8 * len(x))
-                x_train, x_test = x[:split], x[split:]
-                y_train, y_test = y[:split], y[split:]
-                
-                # Model training
-                model = create_model((x_train.shape[1], 1))
-                model.fit(x_train, y_train, batch_size=32, epochs=15, 
-                         validation_data=(x_test, y_test), verbose=0)
-                
-                # Make predictions
-                predictions = model.predict(x_test)
-                predicted_prices = scaler.inverse_transform(predictions)
-                actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
+                if USE_TENSORFLOW:
+                    # Create sequences for LSTM
+                    seq_length = 60
+                    x, y = [], []
+                    for i in range(seq_length, len(scaled_data)):
+                        x.append(scaled_data[i-seq_length:i, 0])
+                        y.append(scaled_data[i, 0])
+                    
+                    x, y = np.array(x), np.array(y)
+                    x = x.reshape((x.shape[0], x.shape[1], 1))
+                    
+                    # Train-test split
+                    split = int(0.8 * len(x))
+                    x_train, x_test = x[:split], x[split:]
+                    y_train, y_test = y[:split], y[split:]
+                    
+                    # Model training
+                    model = create_model((x_train.shape[1], 1))
+                    model.fit(x_train, y_train, batch_size=32, epochs=15, 
+                             validation_data=(x_test, y_test), verbose=0)
+                    
+                    # Make predictions
+                    predictions = model.predict(x_test)
+                    predicted_prices = scaler.inverse_transform(predictions)
+                    actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
+                else:
+                    # Alternative approach using scikit-learn
+                    # Create features using rolling windows
+                    df_ml = df.copy()
+                    for i in range(1, 21):
+                        df_ml[f'lag_{i}'] = df_ml['Close'].shift(i)
+                    
+                    df_ml = df_ml.dropna()
+                    
+                    # Prepare features and target
+                    X = df_ml.drop('Close', axis=1)
+                    y = df_ml['Close']
+                    
+                    # Train-test split
+                    split = int(0.8 * len(X))
+                    X_train, X_test = X[:split], X[split:]
+                    y_train, y_test = y[:split], y[split:]
+                    
+                    # Train model
+                    model = create_model()
+                    model.fit(X_train, y_train)
+                    
+                    # Make predictions
+                    predictions = model.predict(X_test)
+                    
+                    # Reshape for consistency with the TensorFlow path
+                    predicted_prices = predictions.reshape(-1, 1)
+                    actual_prices = y_test.values.reshape(-1, 1)
                 rmse = np.sqrt(mean_squared_error(actual_prices, predicted_prices))
                 
                 # Plot results
