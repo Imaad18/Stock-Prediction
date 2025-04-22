@@ -1,15 +1,7 @@
-# Core Dependencies
-streamlit>=1.22.0
-numpy>=1.21.0
-pandas>=1.3.0
-matplotlib>=3.5.0
-
-# Data Retrieval
-yfinance>=0.1.63
-
-# Machine Learning - Use TensorFlow CPU version to avoid compatibility issues
-tensorflow-cpu>=2.9.0
-scikit-learn>=1.0.0
-
-# Utilities
-python-dateutil>=2.8.2
+yfinance==0.2.35
+numpy==1.26.3
+pandas==2.1.4
+matplotlib==3.8.2
+streamlit==1.32.0
+scikit-learn==1.4.0
+tensorflow==2.15.0
