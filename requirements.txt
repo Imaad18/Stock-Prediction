@@ -11,5 +11,8 @@ yfinance>=0.1.63
 tensorflow-cpu>=2.9.0
 scikit-learn>=1.0.0
 
+# Technical Analysis
+pandas-ta>=0.3.14b
+
 # Utilities
 python-dateutil>=2.8.2
