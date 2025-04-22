@@ -215,22 +215,35 @@ def main():
             st.error("No valid stock data available. Please check your inputs.")
             st.stop()
         
-        # Display current prices for valid tickers
+        # Display current prices for valid tickers - FIXED VERSION
         for t, df_t in valid_tickers.items():
             if not df_t.empty:
-                last_price = df_t['Close'].iloc[-1]  # Get the last closing price
-                alerts = get_alerts()
-                alert_msg = ""
+                # Get the last closing price
+                last_price = float(df_t['Close'].iloc[-1])
                 
-                # Check for alerts
+                # Calculate the price change for delta
+                if len(df_t) > 1:
+                    prev_price = float(df_t['Close'].iloc[-2])
+                    price_change = last_price - prev_price
+                    price_change_pct = (price_change / prev_price) * 100
+                    delta = f"{price_change_pct:.2f}%"
+                else:
+                    delta = None
+                
+                # Display the latest price with proper delta
+                st.metric(
+                    label=t, 
+                    value=f"${last_price:.2f}", 
+                    delta=delta
+                )
+                
+                # Check for alerts and display them separately
+                alerts = get_alerts()
                 if t in alerts:
                     for alert in alerts[t]:
                         if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
                            (alert['type'] == 'Price Below' and last_price < alert['price']):
-                            alert_msg = f"⚠️ {alert['type']} ${alert['price']:.2f}"
-                
-                # Display the latest price
-                st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_msg)
+                            st.warning(f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}")
         
         # Stock Research Resources
         st.header("Stock Research Resources")
