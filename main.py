@@ -57,6 +57,7 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
+
 def detect_technical_patterns(df):
     """Detect common technical patterns in stock data"""
     if len(df) < 100:
@@ -65,70 +66,86 @@ def detect_technical_patterns(df):
     patterns = {}
     df_analysis = df.copy()
     
-    # Calculate indicators
-    df_analysis['SMA20'] = df_analysis['Close'].rolling(window=20).mean()
-    df_analysis['SMA50'] = df_analysis['Close'].rolling(window=50).mean()
-    df_analysis['SMA200'] = df_analysis['Close'].rolling(window=200).mean()
-    df_analysis['Std'] = df_analysis['Close'].rolling(window=20).std()
-    df_analysis['Upper_Band'] = df_analysis['SMA20'] + (df_analysis['Std'] * 2)
-    df_analysis['Lower_Band'] = df_analysis['SMA20'] - (df_analysis['Std'] * 2)
-    df_analysis = df_analysis.dropna()
+    try:
+        # Calculate indicators
+        df_analysis['SMA20'] = df_analysis['Close'].rolling(window=20, min_periods=1).mean()
+        df_analysis['SMA50'] = df_analysis['Close'].rolling(window=50, min_periods=1).mean()
+        df_analysis['SMA200'] = df_analysis['Close'].rolling(window=200, min_periods=1).mean()
+        df_analysis['Std'] = df_analysis['Close'].rolling(window=20, min_periods=1).std()
+        df_analysis['Upper_Band'] = df_analysis['SMA20'] + (df_analysis['Std'] * 2)
+        df_analysis['Lower_Band'] = df_analysis['SMA20'] - (df_analysis['Std'] * 2)
+        df_analysis = df_analysis.dropna()
+        
+        if len(df_analysis) < 2:
+            return None
+        
+        # Get scalar values for comparison
+        last_close = float(df_analysis['Close'].iloc[-1])
+        upper_band = float(df_analysis['Upper_Band'].iloc[-1])
+        lower_band = float(df_analysis['Lower_Band'].iloc[-1])
+        sma20 = float(df_analysis['SMA20'].iloc[-1])
+        sma50 = float(df_analysis['SMA50'].iloc[-1])
+        
+        # Moving average crossovers
+        if len(df_analysis) >= 2:
+            sma20_prev = float(df_analysis['SMA20'].iloc[-2])
+            sma50_prev = float(df_analysis['SMA50'].iloc[-2])
+            
+            if sma20_prev < sma50_prev and sma20 > sma50:
+                patterns['Golden Cross'] = {
+                    'type': 'bullish',
+                    'desc': '20-day SMA crossed above 50-day SMA',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
+            
+            if sma20_prev > sma50_prev and sma20 < sma50:
+                patterns['Death Cross'] = {
+                    'type': 'bearish',
+                    'desc': '20-day SMA crossed below 50-day SMA',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
+        
+        # Bollinger Bands signals
+        if last_close > upper_band:
+            patterns['Overbought'] = {
+                'type': 'bearish',
+                'desc': 'Price above upper Bollinger Band',
+                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+            }
+        
+        if last_close < lower_band:
+            patterns['Oversold'] = {
+                'type': 'bullish',
+                'desc': 'Price below lower Bollinger Band',
+                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+            }
+        
+        # Trend strength
+        if len(df_analysis) >= 20:
+            last_20_days = df_analysis['Close'].iloc[-20:].values
+            price_change = (last_20_days[-1] - last_20_days[0]) / last_20_days[0]
+            
+            if price_change > 0.10:
+                patterns['Strong Uptrend'] = {
+                    'type': 'bullish',
+                    'desc': f'{price_change:.1%} increase in last 20 days',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
+            
+            if price_change < -0.10:
+                patterns['Strong Downtrend'] = {
+                    'type': 'bearish',
+                    'desc': f'{price_change:.1%} decrease in last 20 days',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
     
-    if len(df_analysis) < 2:
+    except Exception as e:
+        st.error(f"Error in pattern detection: {str(e)}")
         return None
     
-    # Pattern detection logic
-    last_close = df_analysis['Close'].iloc[-1]
-    
-    # Moving average crossovers
-    if df_analysis['SMA20'].iloc[-2] < df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] > df_analysis['SMA50'].iloc[-1]:
-        patterns['Golden Cross'] = {
-            'type': 'bullish',
-            'desc': '20-day SMA crossed above 50-day SMA',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    if df_analysis['SMA20'].iloc[-2] > df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] < df_analysis['SMA50'].iloc[-1]:
-        patterns['Death Cross'] = {
-            'type': 'bearish',
-            'desc': '20-day SMA crossed below 50-day SMA',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    # Bollinger Bands signals
-    if last_close > df_analysis['Upper_Band'].iloc[-1]:
-        patterns['Overbought'] = {
-            'type': 'bearish',
-            'desc': 'Price above upper Bollinger Band',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    if last_close < df_analysis['Lower_Band'].iloc[-1]:
-        patterns['Oversold'] = {
-            'type': 'bullish',
-            'desc': 'Price below lower Bollinger Band',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    # Trend strength
-    last_20_days = df_analysis['Close'].iloc[-20:].values
-    price_change = (last_20_days[-1] - last_20_days[0]) / last_20_days[0]
-    
-    if price_change > 0.10:
-        patterns['Strong Uptrend'] = {
-            'type': 'bullish',
-            'desc': f'{price_change:.1%} increase in last 20 days',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    if price_change < -0.10:
-        patterns['Strong Downtrend'] = {
-            'type': 'bearish',
-            'desc': f'{price_change:.1%} decrease in last 20 days',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
     return patterns
+
+    
 
 def get_alerts():
     """Initialize or retrieve alerts from session state"""
