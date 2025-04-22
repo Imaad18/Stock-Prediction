@@ -1,29 +1,15 @@
-# At the beginning of your script
-try:
-    import tensorflow as tf
-    from keras.models import Sequential
-    from keras.layers import Dense, LSTM, Dropout
-except ImportError:
-    st.error("TensorFlow/Keras couldn't be imported. This app requires TensorFlow to run.")
-    st.info("If you're running this app on Streamlit Cloud, please contact the developer for a compatible version.")
-    st.stop()
-
-
+import streamlit as st
 import yfinance as yf
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import matplotlib.pyplot as plt
-import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import concurrent.futures
 import time
-import pandas_ta as ta  # For technical indicators
 from datetime import datetime, timedelta
-import json
 
-# Safe imports of TensorFlow components
+# TensorFlow imports with error handling
 try:
     from tensorflow.keras.models import Sequential
     from tensorflow.keras.layers import Dense, LSTM, Dropout
@@ -32,21 +18,35 @@ except ImportError:
         from keras.models import Sequential
         from keras.layers import Dense, LSTM, Dropout
     except ImportError:
-        st.error("Could not import TensorFlow/Keras. Please check installation.")
+        st.error("Could not import TensorFlow/Keras. Please install required packages.")
         st.stop()
 
-# Enable caching for expensive operations
+# App configuration
+st.set_page_config(
+    page_title="Advanced Stock Prediction", 
+    page_icon="📈", 
+    layout="wide",
+    menu_items={
+        'Get Help': 'https://github.com/your-repo/stock-prediction',
+        'Report a bug': "https://github.com/your-repo/stock-prediction/issues",
+        'About': "# Advanced Stock Prediction App"
+    }
+)
+
+# Cached functions
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
+    """Load stock data from Yahoo Finance"""
     try:
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
         return df if not df.empty else None
     except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
+        st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
 @st.cache_resource(show_spinner=False)
 def create_model(input_shape):
+    """Create LSTM model with given input shape"""
     model = Sequential([
         LSTM(50, return_sequences=True, input_shape=input_shape),
         Dropout(0.2),
@@ -57,74 +57,56 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
-# Function to detect patterns and technical events
-def detect_patterns(df):
+def detect_technical_patterns(df):
+    """Detect common technical patterns in stock data"""
     if len(df) < 100:
         return None
     
     patterns = {}
-    
-    # Create copy to avoid modifying original
     df_analysis = df.copy()
     
-    # Calculate moving averages
+    # Calculate indicators
     df_analysis['SMA20'] = df_analysis['Close'].rolling(window=20).mean()
     df_analysis['SMA50'] = df_analysis['Close'].rolling(window=50).mean()
     df_analysis['SMA200'] = df_analysis['Close'].rolling(window=200).mean()
-    
-    # Calculate Bollinger Bands
-    df_analysis['Middle Band'] = df_analysis['SMA20']
     df_analysis['Std'] = df_analysis['Close'].rolling(window=20).std()
-    df_analysis['Upper Band'] = df_analysis['Middle Band'] + (df_analysis['Std'] * 2)
-    df_analysis['Lower Band'] = df_analysis['Middle Band'] - (df_analysis['Std'] * 2)
-    
-    # Drop NaN values
+    df_analysis['Upper_Band'] = df_analysis['SMA20'] + (df_analysis['Std'] * 2)
+    df_analysis['Lower_Band'] = df_analysis['SMA20'] - (df_analysis['Std'] * 2)
     df_analysis = df_analysis.dropna()
     
     if len(df_analysis) < 2:
         return None
     
-    # Detect basic patterns
+    # Pattern detection logic
+    last_close = df_analysis['Close'].iloc[-1]
     
     # Moving average crossovers
     if df_analysis['SMA20'].iloc[-2] < df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] > df_analysis['SMA50'].iloc[-1]:
         patterns['Golden Cross'] = {
             'type': 'bullish',
-            'desc': 'Short-term momentum is turning positive (20-day SMA crossed above 50-day SMA)',
+            'desc': '20-day SMA crossed above 50-day SMA',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
     if df_analysis['SMA20'].iloc[-2] > df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] < df_analysis['SMA50'].iloc[-1]:
         patterns['Death Cross'] = {
             'type': 'bearish',
-            'desc': 'Short-term momentum is turning negative (20-day SMA crossed below 50-day SMA)',
+            'desc': '20-day SMA crossed below 50-day SMA',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
-    # Support/Resistance
-    last_close = df_analysis['Close'].iloc[-1]
-    
-    # Check if price is near SMA200 (potential support/resistance)
-    distance_to_sma200 = abs(last_close - df_analysis['SMA200'].iloc[-1]) / last_close
-    if distance_to_sma200 < 0.03:  # Within 3%
-        patterns['Key Level'] = {
-            'type': 'neutral',
-            'desc': f'Price is near 200-day SMA (${df_analysis["SMA200"].iloc[-1]:.2f}), a key support/resistance level',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
-    
-    # Bollinger Band signals
-    if df_analysis['Close'].iloc[-1] > df_analysis['Upper Band'].iloc[-1]:
+    # Bollinger Bands signals
+    if last_close > df_analysis['Upper_Band'].iloc[-1]:
         patterns['Overbought'] = {
             'type': 'bearish',
-            'desc': 'Price is above upper Bollinger Band, potentially overbought',
+            'desc': 'Price above upper Bollinger Band',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
-    if df_analysis['Close'].iloc[-1] < df_analysis['Lower Band'].iloc[-1]:
+    if last_close < df_analysis['Lower_Band'].iloc[-1]:
         patterns['Oversold'] = {
             'type': 'bullish',
-            'desc': 'Price is below lower Bollinger Band, potentially oversold',
+            'desc': 'Price below lower Bollinger Band',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
@@ -132,354 +114,303 @@ def detect_patterns(df):
     last_20_days = df_analysis['Close'].iloc[-20:].values
     price_change = (last_20_days[-1] - last_20_days[0]) / last_20_days[0]
     
-    if price_change > 0.10:  # 10% up in 20 days
+    if price_change > 0.10:
         patterns['Strong Uptrend'] = {
             'type': 'bullish',
-            'desc': f'Strong uptrend: {price_change:.1%} increase in last 20 days',
+            'desc': f'{price_change:.1%} increase in last 20 days',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
-    if price_change < -0.10:  # 10% down in 20 days
+    if price_change < -0.10:
         patterns['Strong Downtrend'] = {
             'type': 'bearish',
-            'desc': f'Strong downtrend: {price_change:.1%} decrease in last 20 days',
+            'desc': f'{price_change:.1%} decrease in last 20 days',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
     return patterns
 
-# Helper function to load and save alerts
 def get_alerts():
+    """Initialize or retrieve alerts from session state"""
     if 'alerts' not in st.session_state:
         st.session_state.alerts = {}
     return st.session_state.alerts
 
-def save_alert(ticker, alert_type, price, active=True):
+def save_alert(ticker, alert_type, price):
+    """Save new alert to session state"""
     alerts = get_alerts()
     if ticker not in alerts:
         alerts[ticker] = []
     
-    # Add new alert
     alerts[ticker].append({
         'type': alert_type,
         'price': float(price),
         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'active': active
+        'active': True
     })
     
-    # Update session state
     st.session_state.alerts = alerts
 
 def delete_alert(ticker, alert_index):
+    """Remove alert from session state"""
     alerts = get_alerts()
     if ticker in alerts and alert_index < len(alerts[ticker]):
         alerts[ticker].pop(alert_index)
         st.session_state.alerts = alerts
 
-# Streamlit App
-st.title("⚡ Advanced Stock Price Prediction")
-
-# Initialize session state
-if 'tab' not in st.session_state:
-    st.session_state.tab = "Prediction"
-
-# Sidebar inputs
-with st.sidebar:
-    st.header("Input Parameters")
-    ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
-    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
-    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+def main():
+    st.title("📈 Advanced Stock Price Prediction")
     
-    # Add a button to trigger the prediction
-    run_prediction = st.button("Run Prediction", type="primary")
-
-# Create tabs
-tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
-
-# Get all tickers to fetch
-all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
-
-# Fetch data in parallel
-start_time = time.time()
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
-    data = {}
-    for future in concurrent.futures.as_completed(futures):
-        ticker_name = futures[future]
-        data[ticker_name] = future.result()
-
-# Filter out None values
-valid_tickers = {k: v for k, v in data.items() if v is not None}
-invalid_tickers = set(all_tickers) - set(valid_tickers.keys())
-
-if invalid_tickers:
-    st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
-
-if not valid_tickers:
-    st.error("No valid stock data available. Please check your inputs.")
-    st.stop()
-
-# Process alerts
-with tabs[2]:
-    st.header("Price Alerts")
-    st.write("Set alerts for specific price levels or conditions.")
+    # Initialize session state
+    if 'tab' not in st.session_state:
+        st.session_state.tab = "Prediction"
     
-    if ticker in valid_tickers:
-        current_price = valid_tickers[ticker]['Close'].iloc[-1]
+    # Sidebar inputs
+    with st.sidebar:
+        st.header("Input Parameters")
+        ticker = st.text_input("Stock Ticker", "AAPL").upper()
+        compare_tickers = st.text_input("Compare With", "MSFT,GOOG").upper()
+        start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
+        end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+        run_prediction = st.button("Run Analysis", type="primary")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            alert_type = st.selectbox(
-                "Alert Type", 
-                ["Price Above", "Price Below", "Prediction Above", "Prediction Below"]
-            )
-        
-        with col2:
-            alert_price = st.number_input(
-                "Target Price", 
-                min_value=0.01, 
-                value=float(current_price),
-                format="%.2f"
-            )
-        
-        if st.button("Add Alert"):
-            save_alert(ticker, alert_type, alert_price)
-            st.success(f"Alert added for {ticker}: {alert_type} ${alert_price:.2f}")
-    
-    # Display existing alerts
-    alerts = get_alerts()
-    
-    if not any(alerts.values()):
-        st.info("No alerts set. Add your first alert above.")
-    else:
-        for t, ticker_alerts in alerts.items():
-            if ticker_alerts:
-                st.subheader(f"{t} Alerts")
-                
-                for i, alert in enumerate(ticker_alerts):
-                    col1, col2, col3 = st.columns([3, 1, 1])
+        # Display latest prices
+        st.header("Latest Prices")
+        if 'data' in st.session_state:
+            for t, df_t in st.session_state.data.items():
+                if not df_t.empty:
+                    last_price = df_t['Close'].iloc[-1]
+                    alerts = get_alerts()
+                    alert_msg = ""
                     
-                    with col1:
-                        st.write(f"**{alert['type']}**: ${alert['price']:.2f}")
+                    if t in alerts:
+                        for alert in alerts[t]:
+                            if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
+                               (alert['type'] == 'Price Below' and last_price < alert['price']):
+                                alert_msg = f"⚠️ {alert['type']} ${alert['price']:.2f}"
                     
-                    with col2:
-                        st.write(f"Created: {alert['created_at']}")
-                    
-                    with col3:
-                        if st.button("Delete", key=f"del_{t}_{i}"):
-                            delete_alert(t, i)
-                            st.rerun()
-
-# Pattern Recognition tab
-with tabs[1]:
-    st.header("Technical Patterns & Events")
+                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_msg)
+        
+        # Stock Research Resources
+        st.header("Stock Research Resources")
+        st.markdown("""
+        ### Market Data & News
+        - [Yahoo Finance](https://finance.yahoo.com/)
+        - [CNBC Markets](https://www.cnbc.com/markets/)
+        - [Bloomberg Markets](https://www.bloomberg.com/markets)
+        
+        ### Technical Analysis
+        - [TradingView](https://www.tradingview.com/)
+        - [StockCharts](https://stockcharts.com/)
+        - [Finviz](https://finviz.com/)
+        
+        ### Fundamental Analysis
+        - [Morningstar](https://www.morningstar.com/)
+        - [Seeking Alpha](https://seekingalpha.com/)
+        - [MarketWatch](https://www.marketwatch.com/)
+        
+        ### Regulatory Filings
+        - [SEC EDGAR](https://www.sec.gov/edgar/searchedgar/companysearch.html)
+        - [Investor.gov](https://www.investor.gov/)
+        """)
     
-    if ticker in valid_tickers:
-        df = valid_tickers[ticker]
-        
-        # Detect patterns
-        patterns = detect_patterns(df)
-        
-        if patterns:
-            # Display patterns in cards
-            for pattern_name, details in patterns.items():
-                col1, col2 = st.columns([1, 3])
+    # Fetch data in parallel
+    all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
+    start_time = time.time()
+    
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
+        data = {}
+        for future in concurrent.futures.as_completed(futures):
+            ticker_name = futures[future]
+            data[ticker_name] = future.result()
+    
+    valid_tickers = {k: v for k, v in data.items() if v is not None}
+    st.session_state.data = valid_tickers
+    
+    if invalid_tickers := set(all_tickers) - set(valid_tickers.keys()):
+        st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
+    
+    if not valid_tickers:
+        st.error("No valid stock data available. Please check your inputs.")
+        st.stop()
+    
+    # Create tabs
+    tabs = st.tabs(["Prediction", "Technical Analysis", "Price Alerts"])
+    
+    # Prediction Tab
+    with tabs[0]:
+        if run_prediction and ticker in valid_tickers:
+            df = valid_tickers[ticker][["Close"]]
+            
+            if len(df) < 100:
+                st.warning("Insufficient data for prediction. Please select a longer time period.")
+                st.stop()
+            
+            with st.spinner("Training prediction model..."):
+                # Data preprocessing
+                scaler = MinMaxScaler()
+                scaled_data = scaler.fit_transform(df)
                 
-                with col1:
-                    if details['type'] == 'bullish':
-                        st.markdown("### 🟢")
-                    elif details['type'] == 'bearish':
-                        st.markdown("### 🔴")
-                    else:
-                        st.markdown("### ⚪")
+                # Create sequences
+                seq_length = 60
+                x, y = [], []
+                for i in range(seq_length, len(scaled_data)):
+                    x.append(scaled_data[i-seq_length:i, 0])
+                    y.append(scaled_data[i, 0])
                 
-                with col2:
-                    st.subheader(pattern_name)
-                    st.write(details['desc'])
-                    st.caption(f"Detected on {details['date']}")
+                x, y = np.array(x), np.array(y)
+                x = x.reshape((x.shape[0], x.shape[1], 1))
                 
-                st.divider()
-        else:
-            st.info("No significant patterns detected in the current timeframe.")
-        
-        # Display technical indicators
-        st.subheader("Technical Indicators")
-        
-        # Calculate indicators
-        df_ta = df.copy()
-        df_ta['SMA20'] = df_ta['Close'].rolling(window=20).mean()
-        df_ta['SMA50'] = df_ta['Close'].rolling(window=50).mean()
-        df_ta['SMA200'] = df_ta['Close'].rolling(window=200).mean()
-        
-        # Create indicator chart
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(df_ta.index, df_ta['Close'], label='Price')
-        ax.plot(df_ta.index, df_ta['SMA20'], label='20-day SMA', linestyle='--')
-        ax.plot(df_ta.index, df_ta['SMA50'], label='50-day SMA', linestyle='--')
-        ax.plot(df_ta.index, df_ta['SMA200'], label='200-day SMA', linestyle='--')
-        
-        # Highlighting potential patterns
-        if patterns:
-            for pattern, details in patterns.items():
-                pattern_date = pd.to_datetime(details['date'])
-                if pattern_date in df_ta.index:
-                    idx = df_ta.index.get_loc(pattern_date)
-                    if idx > 0 and idx < len(df_ta):
-                        price = df_ta['Close'].iloc[idx]
-                        if details['type'] == 'bullish':
-                            ax.plot(pattern_date, price, 'go', markersize=10)
-                        elif details['type'] == 'bearish':
-                            ax.plot(pattern_date, price, 'ro', markersize=10)
-                        else:
-                            ax.plot(pattern_date, price, 'ko', markersize=10)
-        
-        ax.set_title(f"{ticker} Price with Moving Averages")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
-
-# Prediction tab content
-with tabs[0]:
-    # Show main stock data quickly
-    if run_prediction:
-        main_df = valid_tickers.get(ticker)
-        if main_df is not None:
-            with st.expander(f"📊 {ticker} Complete Stock Data (Last 20 Days)"):
-                # Show full data table with all columns
-                st.dataframe(main_df.tail(20))
-
-    # Prediction only runs when button is clicked and we have enough data
-    if run_prediction and ticker in valid_tickers:
-        df = valid_tickers[ticker][["Close"]]  # Use only Close for prediction
-        if len(df) < 100:
-            st.warning("Not enough data for accurate prediction. Please select a longer time period.")
-            st.stop()
-        
-        # Progress bar for user feedback
-        progress_bar = st.progress(0)
-        
-        # Normalize data
-        scaler = MinMaxScaler()
-        scaled_data = scaler.fit_transform(df)
-        progress_bar.progress(20)
-        
-        # Create sequences
-        seq_length = 60
-        x, y = [], []
-        for i in range(seq_length, len(scaled_data)):
-            x.append(scaled_data[i-seq_length:i, 0])
-            y.append(scaled_data[i, 0])
-        x, y = np.array(x), np.array(y)
-        x = x.reshape((x.shape[0], x.shape[1], 1))
-        progress_bar.progress(40)
-        
-        # Train-test split
-        split = int(0.8 * len(x))
-        x_train, x_test = x[:split], x[split:]
-        y_train, y_test = y[:split], y[split:]
-        
-        # Create and train model
-        model = create_model((x_train.shape[1], 1))
-        history = model.fit(x_train, y_train, 
-                           batch_size=32, 
-                           epochs=15, 
-                           validation_data=(x_test, y_test),
-                           verbose=0)
-        progress_bar.progress(80)
-        
-        # Make predictions
-        predictions = model.predict(x_test)
-        predicted_prices = scaler.inverse_transform(predictions)
-        actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
-        progress_bar.progress(95)
-        
-        # Calculate RMSE
-        rmse = np.sqrt(mean_squared_error(actual_prices, predicted_prices))
-        
-        # Plot results
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(df.index[split+seq_length:], actual_prices, 'b-', label='Actual')
-        ax.plot(df.index[split+seq_length:], predicted_prices, 'r--', label='Predicted')
-        
-        # Add alerts if any exist for this ticker
-        alerts = get_alerts()
-        if ticker in alerts and alerts[ticker]:
-            for alert in alerts[ticker]:
-                if alert['active']:
-                    # Draw horizontal line for the alert
-                    ax.axhline(y=alert['price'], color='g', linestyle='-', alpha=0.5)
-                    # Add annotation
-                    ax.text(df.index[len(df) // 2], alert['price'], 
-                           f" {alert['type']} ${alert['price']:.2f}", 
-                           verticalalignment='bottom', color='green')
-        
-        ax.set_title(f"{ticker} Price Prediction (RMSE: {rmse:.2f})")
-        ax.legend()
-        progress_bar.progress(100)
-        st.pyplot(fig)
-        
-        # Show comparison charts if other tickers exist
-        if len(valid_tickers) > 1:
-            st.subheader("Comparison with Other Stocks")
-            fig_comp, ax_comp = plt.subplots(figsize=(10, 5))
-            for t, df_t in valid_tickers.items():
-                ax_comp.plot(df_t.index, df_t['Close'], label=t)
-            ax_comp.set_title("Stock Price Comparison")
-            ax_comp.legend()
-            st.pyplot(fig_comp)
-
-# Show latest prices in sidebar
-with st.sidebar:
-    st.header("Latest Prices")
-    for t, df_t in valid_tickers.items():
-        if not df_t.empty:
-            try:
-                # Properly extract the scalar value
-                last_price = df_t['Close'].iloc[-1]
-                if hasattr(last_price, 'values'):  # If it's a pandas Series
-                    last_price = last_price.values[0]
-                    
-                # Check if there are any triggered alerts
+                # Train-test split
+                split = int(0.8 * len(x))
+                x_train, x_test = x[:split], x[split:]
+                y_train, y_test = y[:split], y[split:]
+                
+                # Model training
+                model = create_model((x_train.shape[1], 1))
+                model.fit(x_train, y_train, batch_size=32, epochs=15, 
+                         validation_data=(x_test, y_test), verbose=0)
+                
+                # Make predictions
+                predictions = model.predict(x_test)
+                predicted_prices = scaler.inverse_transform(predictions)
+                actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
+                rmse = np.sqrt(mean_squared_error(actual_prices, predicted_prices))
+                
+                # Plot results
+                fig, ax = plt.subplots(figsize=(12, 6))
+                ax.plot(df.index[split+seq_length:], actual_prices, 'b-', label='Actual')
+                ax.plot(df.index[split+seq_length:], predicted_prices, 'r--', label='Predicted')
+                
+                # Add alert markers if any exist
                 alerts = get_alerts()
-                alert_triggered = False
-                alert_message = ""
+                if ticker in alerts:
+                    for alert in alerts[ticker]:
+                        if alert['active']:
+                            ax.axhline(y=alert['price'], color='g', linestyle='-', alpha=0.3)
+                            ax.text(df.index[len(df) // 2], alert['price'], 
+                                   f" {alert['type']} ${alert['price']:.2f}", 
+                                   verticalalignment='bottom')
                 
-                if t in alerts:
-                    for alert in alerts[t]:
-                        if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
-                           (alert['type'] == 'Price Below' and last_price < alert['price']):
-                            alert_triggered = True
-                            alert_message = f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}"
+                ax.set_title(f"{ticker} Price Prediction (RMSE: {rmse:.2f})")
+                ax.legend()
+                st.pyplot(fig)
+            
+            # Show comparison chart if multiple tickers
+            if len(valid_tickers) > 1:
+                st.subheader("Stock Comparison")
+                fig_comp, ax_comp = plt.subplots(figsize=(12, 5))
+                for t, df_t in valid_tickers.items():
+                    ax_comp.plot(df_t.index, df_t['Close'], label=t)
+                ax_comp.set_title("Price Comparison")
+                ax_comp.legend()
+                st.pyplot(fig_comp)
+    
+    # Technical Analysis Tab
+    with tabs[1]:
+        if ticker in valid_tickers:
+            df = valid_tickers[ticker]
+            patterns = detect_technical_patterns(df)
+            
+            if patterns:
+                st.subheader("Detected Patterns")
+                cols = st.columns(3)
+                col_idx = 0
                 
-                # Display price, with alert if triggered
-                if alert_triggered:
-                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_message)
-                else:
-                    st.metric(label=t, value=f"${float(last_price):.2f}")
+                for pattern, details in patterns.items():
+                    with cols[col_idx]:
+                        if details['type'] == 'bullish':
+                            st.success(f"**{pattern}**")
+                        elif details['type'] == 'bearish':
+                            st.error(f"**{pattern}**")
+                        else:
+                            st.info(f"**{pattern}**")
+                        
+                        st.write(details['desc'])
+                        st.caption(f"Detected on {details['date']}")
                     
-            except Exception as e:
-                st.error(f"Error displaying price for {t}: {str(e)}")
+                    col_idx = (col_idx + 1) % 3
+            else:
+                st.info("No significant patterns detected")
+            
+            # Technical indicators chart
+            st.subheader("Technical Indicators")
+            df_ta = df.copy()
+            df_ta['SMA20'] = df_ta['Close'].rolling(window=20).mean()
+            df_ta['SMA50'] = df_ta['Close'].rolling(window=50).mean()
+            df_ta['SMA200'] = df_ta['Close'].rolling(window=200).mean()
+            
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(df_ta.index, df_ta['Close'], label='Price', alpha=0.8)
+            ax.plot(df_ta.index, df_ta['SMA20'], label='20-day SMA', linestyle='--')
+            ax.plot(df_ta.index, df_ta['SMA50'], label='50-day SMA', linestyle='--')
+            ax.plot(df_ta.index, df_ta['SMA200'], label='200-day SMA', linestyle='--')
+            
+            if patterns:
+                for pattern, details in patterns.items():
+                    pattern_date = pd.to_datetime(details['date'])
+                    if pattern_date in df_ta.index:
+                        idx = df_ta.index.get_loc(pattern_date)
+                        if idx > 0 and idx < len(df_ta):
+                            price = df_ta['Close'].iloc[idx]
+                            marker = 'go' if details['type'] == 'bullish' else 'ro'
+                            ax.plot(pattern_date, price, marker, markersize=10)
+            
+            ax.set_title(f"{ticker} Technical Indicators")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
     
-    # Add stock information websites
-    st.sidebar.header("Stock Information Resources")
-    st.sidebar.markdown("""
-    ### Research & News
-    - [Yahoo Finance](https://finance.yahoo.com/)
-    - [CNBC](https://www.cnbc.com/stock-markets/)
-    - [MarketWatch](https://www.marketwatch.com/)
-    - [Bloomberg](https://www.bloomberg.com/markets/stocks)
-    - [Investing.com](https://www.investing.com/)
+    # Alerts Tab
+    with tabs[2]:
+        st.header("Price Alerts Management")
+        
+        if ticker in valid_tickers:
+            current_price = valid_tickers[ticker]['Close'].iloc[-1]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                alert_type = st.selectbox(
+                    "Alert Condition", 
+                    ["Price Above", "Price Below", "Prediction Above", "Prediction Below"]
+                )
+            
+            with col2:
+                alert_price = st.number_input(
+                    "Target Price", 
+                    min_value=0.01, 
+                    value=float(current_price),
+                    format="%.2f"
+                )
+            
+            if st.button("Add Alert"):
+                save_alert(ticker, alert_type, alert_price)
+                st.success(f"Alert set for {ticker}: {alert_type} ${alert_price:.2f}")
+        
+        # Display existing alerts
+        alerts = get_alerts()
+        
+        if not any(alerts.values()):
+            st.info("No alerts currently set")
+        else:
+            st.subheader("Your Active Alerts")
+            for ticker_name, ticker_alerts in alerts.items():
+                if ticker_alerts:
+                    st.write(f"**{ticker_name}**")
+                    
+                    for i, alert in enumerate(ticker_alerts):
+                        cols = st.columns([3, 1, 1])
+                        with cols[0]:
+                            st.write(f"{alert['type']} ${alert['price']:.2f}")
+                        with cols[1]:
+                            st.write(alert['created_at'])
+                        with cols[2]:
+                            if st.button("Delete", key=f"del_{ticker_name}_{i}"):
+                                delete_alert(ticker_name, i)
+                                st.rerun()
     
-    ### Advanced Analysis
-    - [TradingView](https://www.tradingview.com/)
-    - [Seeking Alpha](https://seekingalpha.com/)
-    - [Morningstar](https://www.morningstar.com/)
-    - [Finviz](https://finviz.com/)
-    
-    ### SEC Filings
-    - [SEC EDGAR](https://www.sec.gov/edgar/searchedgar/companysearch)
-    """)
+    st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
 
-st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
+if __name__ == "__main__":
+    main()
