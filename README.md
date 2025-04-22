@@ -1,14 +1,23 @@
-# Live Demo in Form of App
-https://stock-prediction-ajqgijnbycusph8ttbc6qf.streamlit.app/
+# Advanced Stock Prediction App
 
-# Stock Price Prediction App
+![App Screenshot](screenshot.png)
 
-# Overview
-This Streamlit application uses deep learning (LSTM) to predict stock prices based on historical data. It allows users to visualize and compare multiple stocks and provides predictions for the main selected stock.
-Features
+A comprehensive stock analysis tool featuring:
+- LSTM-based price prediction
+- Technical pattern detection
+- Price alert system
+- Multi-stock comparison
 
-* Stock Price Prediction: Uses LSTM neural networks to predict future stock prices
-* Multi-Stock Comparison: Compare price trends across multiple stocks simultaneously
-* Complete Market Data: View Open, High, Low, Close, and Volume data for selected stocks
-* Interactive UI: User-friendly interface with customizable parameters
-* Resource Links: Quick access to popular financial websites for additional stock research
+## Features
+
+- **Price Prediction**: Uses LSTM neural networks to forecast stock prices
+- **Technical Analysis**: Detects common patterns like Golden Cross, Death Cross, etc.
+- **Alerts System**: Set price level alerts with visual indicators
+- **Research Resources**: Quick links to financial data sources
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your-repo/stock-prediction.git
+cd stock-prediction
