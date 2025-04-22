@@ -1,16 +1,13 @@
 import yfinance as yf
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
 import concurrent.futures
 import time
-import pandas_ta as ta  # For technical indicators
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 
 # Safe imports of TensorFlow components
 try:
@@ -46,6 +43,38 @@ def create_model(input_shape):
     model.compile(optimizer="adam", loss="mse")
     return model
 
+# Function to calculate technical indicators manually without pandas_ta
+def calculate_indicators(df):
+    # Create a copy to avoid modifying original dataframe
+    df_copy = df.copy()
+    
+    # Calculate Simple Moving Averages
+    df_copy['SMA20'] = df_copy['Close'].rolling(window=20).mean()
+    df_copy['SMA50'] = df_copy['Close'].rolling(window=50).mean()
+    df_copy['SMA200'] = df_copy['Close'].rolling(window=200).mean()
+    
+    # Calculate Bollinger Bands
+    df_copy['Middle_Band'] = df_copy['SMA20']
+    df_copy['Std_Dev'] = df_copy['Close'].rolling(window=20).std()
+    df_copy['Upper_Band'] = df_copy['Middle_Band'] + (df_copy['Std_Dev'] * 2)
+    df_copy['Lower_Band'] = df_copy['Middle_Band'] - (df_copy['Std_Dev'] * 2)
+    
+    # Calculate RSI (14-period)
+    delta = df_copy['Close'].diff()
+    gain = delta.copy()
+    loss = delta.copy()
+    gain[gain < 0] = 0
+    loss[loss > 0] = 0
+    loss = abs(loss)
+    
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+    
+    rs = avg_gain / avg_loss
+    df_copy['RSI'] = 100 - (100 / (1 + rs))
+    
+    return df_copy
+
 # Function to detect patterns and technical events
 def detect_patterns(df):
     if len(df) < 100:
@@ -53,19 +82,8 @@ def detect_patterns(df):
     
     patterns = {}
     
-    # Create copy to avoid modifying original
-    df_analysis = df.copy()
-    
-    # Calculate moving averages
-    df_analysis['SMA20'] = df_analysis['Close'].rolling(window=20).mean()
-    df_analysis['SMA50'] = df_analysis['Close'].rolling(window=50).mean()
-    df_analysis['SMA200'] = df_analysis['Close'].rolling(window=200).mean()
-    
-    # Calculate Bollinger Bands
-    df_analysis['Middle Band'] = df_analysis['SMA20']
-    df_analysis['Std'] = df_analysis['Close'].rolling(window=20).std()
-    df_analysis['Upper Band'] = df_analysis['Middle Band'] + (df_analysis['Std'] * 2)
-    df_analysis['Lower Band'] = df_analysis['Middle Band'] - (df_analysis['Std'] * 2)
+    # Calculate indicators
+    df_analysis = calculate_indicators(df)
     
     # Drop NaN values
     df_analysis = df_analysis.dropna()
@@ -94,28 +112,45 @@ def detect_patterns(df):
     last_close = df_analysis['Close'].iloc[-1]
     
     # Check if price is near SMA200 (potential support/resistance)
-    distance_to_sma200 = abs(last_close - df_analysis['SMA200'].iloc[-1]) / last_close
-    if distance_to_sma200 < 0.03:  # Within 3%
-        patterns['Key Level'] = {
-            'type': 'neutral',
-            'desc': f'Price is near 200-day SMA (${df_analysis["SMA200"].iloc[-1]:.2f}), a key support/resistance level',
-            'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-        }
+    if 'SMA200' in df_analysis.columns:
+        distance_to_sma200 = abs(last_close - df_analysis['SMA200'].iloc[-1]) / last_close
+        if distance_to_sma200 < 0.03:  # Within 3%
+            patterns['Key Level'] = {
+                'type': 'neutral',
+                'desc': f'Price is near 200-day SMA (${df_analysis["SMA200"].iloc[-1]:.2f}), a key support/resistance level',
+                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+            }
     
     # Bollinger Band signals
-    if df_analysis['Close'].iloc[-1] > df_analysis['Upper Band'].iloc[-1]:
+    if df_analysis['Close'].iloc[-1] > df_analysis['Upper_Band'].iloc[-1]:
         patterns['Overbought'] = {
             'type': 'bearish',
             'desc': 'Price is above upper Bollinger Band, potentially overbought',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
-    if df_analysis['Close'].iloc[-1] < df_analysis['Lower Band'].iloc[-1]:
+    if df_analysis['Close'].iloc[-1] < df_analysis['Lower_Band'].iloc[-1]:
         patterns['Oversold'] = {
             'type': 'bullish',
             'desc': 'Price is below lower Bollinger Band, potentially oversold',
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
+    
+    # RSI signals
+    if 'RSI' in df_analysis.columns:
+        if df_analysis['RSI'].iloc[-1] > 70:
+            patterns['RSI Overbought'] = {
+                'type': 'bearish',
+                'desc': f'RSI is overbought at {df_analysis["RSI"].iloc[-1]:.1f}',
+                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+            }
+        
+        if df_analysis['RSI'].iloc[-1] < 30:
+            patterns['RSI Oversold'] = {
+                'type': 'bullish',
+                'desc': f'RSI is oversold at {df_analysis["RSI"].iloc[-1]:.1f}',
+                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+            }
     
     # Trend strength
     last_20_days = df_analysis['Close'].iloc[-20:].values
@@ -135,7 +170,7 @@ def detect_patterns(df):
             'date': df_analysis.index[-1].strftime('%Y-%m-%d')
         }
     
-    return patterns
+    return patterns, df_analysis
 
 # Helper function to load and save alerts
 def get_alerts():
@@ -269,65 +304,63 @@ with tabs[1]:
         df = valid_tickers[ticker]
         
         # Detect patterns
-        patterns = detect_patterns(df)
-        
-        if patterns:
-            # Display patterns in cards
-            for pattern_name, details in patterns.items():
-                col1, col2 = st.columns([1, 3])
-                
-                with col1:
-                    if details['type'] == 'bullish':
-                        st.markdown("### 🟢")
-                    elif details['type'] == 'bearish':
-                        st.markdown("### 🔴")
-                    else:
-                        st.markdown("### ⚪")
-                
-                with col2:
-                    st.subheader(pattern_name)
-                    st.write(details['desc'])
-                    st.caption(f"Detected on {details['date']}")
-                
-                st.divider()
-        else:
-            st.info("No significant patterns detected in the current timeframe.")
-        
-        # Display technical indicators
-        st.subheader("Technical Indicators")
-        
-        # Calculate indicators
-        df_ta = df.copy()
-        df_ta['SMA20'] = df_ta['Close'].rolling(window=20).mean()
-        df_ta['SMA50'] = df_ta['Close'].rolling(window=50).mean()
-        df_ta['SMA200'] = df_ta['Close'].rolling(window=200).mean()
-        
-        # Create indicator chart
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(df_ta.index, df_ta['Close'], label='Price')
-        ax.plot(df_ta.index, df_ta['SMA20'], label='20-day SMA', linestyle='--')
-        ax.plot(df_ta.index, df_ta['SMA50'], label='50-day SMA', linestyle='--')
-        ax.plot(df_ta.index, df_ta['SMA200'], label='200-day SMA', linestyle='--')
-        
-        # Highlighting potential patterns
-        if patterns:
-            for pattern, details in patterns.items():
-                pattern_date = pd.to_datetime(details['date'])
-                if pattern_date in df_ta.index:
-                    idx = df_ta.index.get_loc(pattern_date)
-                    if idx > 0 and idx < len(df_ta):
-                        price = df_ta['Close'].iloc[idx]
+        result = detect_patterns(df)
+        if result is not None:
+            patterns, df_ta = result
+            
+            if patterns:
+                # Display patterns in cards
+                for pattern_name, details in patterns.items():
+                    col1, col2 = st.columns([1, 3])
+                    
+                    with col1:
                         if details['type'] == 'bullish':
-                            ax.plot(pattern_date, price, 'go', markersize=10)
+                            st.markdown("### 🟢")
                         elif details['type'] == 'bearish':
-                            ax.plot(pattern_date, price, 'ro', markersize=10)
+                            st.markdown("### 🔴")
                         else:
-                            ax.plot(pattern_date, price, 'ko', markersize=10)
-        
-        ax.set_title(f"{ticker} Price with Moving Averages")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
+                            st.markdown("### ⚪")
+                    
+                    with col2:
+                        st.subheader(pattern_name)
+                        st.write(details['desc'])
+                        st.caption(f"Detected on {details['date']}")
+                    
+                    st.divider()
+            else:
+                st.info("No significant patterns detected in the current timeframe.")
+            
+            # Display technical indicators
+            st.subheader("Technical Indicators")
+            
+            # Create indicator chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.plot(df_ta.index, df_ta['Close'], label='Price')
+            ax.plot(df_ta.index, df_ta['SMA20'], label='20-day SMA', linestyle='--')
+            ax.plot(df_ta.index, df_ta['SMA50'], label='50-day SMA', linestyle='--')
+            ax.plot(df_ta.index, df_ta['SMA200'], label='200-day SMA', linestyle='--')
+            
+            # Highlighting potential patterns
+            if patterns:
+                for pattern, details in patterns.items():
+                    pattern_date = pd.to_datetime(details['date'])
+                    if pattern_date in df_ta.index:
+                        idx = df_ta.index.get_loc(pattern_date)
+                        if idx > 0 and idx < len(df_ta):
+                            price = df_ta['Close'].iloc[idx]
+                            if details['type'] == 'bullish':
+                                ax.plot(pattern_date, price, 'go', markersize=10)
+                            elif details['type'] == 'bearish':
+                                ax.plot(pattern_date, price, 'ro', markersize=10)
+                            else:
+                                ax.plot(pattern_date, price, 'ko', markersize=10)
+            
+            ax.set_title(f"{ticker} Price with Moving Averages")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+        else:
+            st.info("Not enough data to analyze patterns. Select a longer time period.")
 
 # Prediction tab content
 with tabs[0]:
