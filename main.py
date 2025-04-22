@@ -5,21 +5,10 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import LinearRegression
 import concurrent.futures
 import time
 from datetime import datetime
-
-# Safe imports of TensorFlow components
-try:
-    from tensorflow.keras.models import Sequential
-    from tensorflow.keras.layers import Dense, LSTM, Dropout
-except ImportError:
-    try:
-        from keras.models import Sequential
-        from keras.layers import Dense, LSTM, Dropout
-    except ImportError:
-        st.error("Could not import TensorFlow/Keras. Please check installation.")
-        st.stop()
 
 # Enable caching for expensive operations
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -31,19 +20,13 @@ def load_data(ticker, start_date, end_date):
         st.error(f"Error fetching data: {str(e)}")
         return None
 
-@st.cache_resource(show_spinner=False)
-def create_model(input_shape):
-    model = Sequential([
-        LSTM(50, return_sequences=True, input_shape=input_shape),
-        Dropout(0.2),
-        LSTM(50, return_sequences=False),
-        Dropout(0.2),
-        Dense(1)
-    ])
-    model.compile(optimizer="adam", loss="mse")
+# Function to create a linear regression model instead of LSTM
+def create_linear_model(X_train, y_train):
+    model = LinearRegression()
+    model.fit(X_train, y_train)
     return model
 
-# Function to calculate technical indicators manually without pandas_ta
+# Function to calculate technical indicators manually
 def calculate_indicators(df):
     try:
         # Create a copy to avoid modifying original dataframe
@@ -86,7 +69,7 @@ def calculate_indicators(df):
 # Function to detect patterns and technical events
 def detect_patterns(df):
     if len(df) < 100:
-        return None, None  # Fixed: Return tuple of None values
+        return None, None
     
     patterns = {}
     
@@ -98,7 +81,7 @@ def detect_patterns(df):
         df_analysis = df_analysis.dropna()
         
         if len(df_analysis) < 2:
-            return None, None  # Fixed: Return tuple of None values
+            return None, None
         
         # Detect basic patterns
         
@@ -215,7 +198,7 @@ def delete_alert(ticker, alert_index):
     return False
 
 # Streamlit App
-st.title("⚡ Advanced Stock Price Prediction")
+st.title("⚡ Stock Analysis and Prediction")
 
 # Initialize session state
 if 'tab' not in st.session_state:
@@ -233,7 +216,7 @@ with st.sidebar:
     end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
     
     # Add a button to trigger the prediction
-    run_prediction = st.button("Run Prediction", type="primary")
+    run_prediction = st.button("Run Analysis", type="primary")
 
 # Create tabs
 tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
@@ -279,7 +262,7 @@ with tabs[2]:
         with col1:
             alert_type = st.selectbox(
                 "Alert Type", 
-                ["Price Above", "Price Below", "Prediction Above", "Prediction Below"]
+                ["Price Above", "Price Below"]
             )
         
         with col2:
@@ -410,65 +393,70 @@ with tabs[0]:
     # Prediction only runs when button is clicked and we have enough data
     if run_prediction and ticker in valid_tickers:
         df = valid_tickers[ticker][["Close"]]  # Use only Close for prediction
-        if len(df) < 100:
-            st.warning("Not enough data for accurate prediction. Please select a longer time period.")
+        if len(df) < 60:
+            st.warning("Not enough data for prediction. Please select a longer time period.")
         else:
             try:
                 # Progress bar for user feedback
                 progress_bar = st.progress(0)
                 
-                # Normalize data
-                scaler = MinMaxScaler()
-                scaled_data = scaler.fit_transform(df)
-                progress_bar.progress(20)
+                # Create features (using last 30 days to predict next day)
+                window_size = 30
+                X = []
+                y = []
                 
-                # Create sequences
-                seq_length = 60
-                x, y = [], []
-                for i in range(seq_length, len(scaled_data)):
-                    x.append(scaled_data[i-seq_length:i, 0])
-                    y.append(scaled_data[i, 0])
-                x, y = np.array(x), np.array(y)
+                for i in range(window_size, len(df)):
+                    X.append(df['Close'].iloc[i-window_size:i].values)
+                    y.append(df['Close'].iloc[i])
                 
-                # Check if we have enough sequences
-                if len(x) == 0 or len(y) == 0:
+                X = np.array(X)
+                y = np.array(y)
+                
+                # Ensure we have enough data
+                if len(X) == 0 or len(y) == 0:
                     st.warning("Not enough data points to create training sequences.")
-                    progress_bar.empty()
+                    if progress_bar:
+                        progress_bar.empty()
                 else:
-                    x = x.reshape((x.shape[0], x.shape[1], 1))
-                    progress_bar.progress(40)
+                    progress_bar.progress(30)
                     
-                    # Train-test split
-                    split = int(0.8 * len(x))
+                    # Train-test split (80% train, 20% test)
+                    split = int(0.8 * len(X))
                     if split == 0:
                         split = 1  # Ensure at least one training sample
                     
-                    x_train, x_test = x[:split], x[split:]
+                    X_train, X_test = X[:split], X[split:]
                     y_train, y_test = y[:split], y[split:]
                     
-                    # Create and train model
-                    with st.spinner("Training LSTM model..."):
-                        model = create_model((x_train.shape[1], 1))
-                        history = model.fit(x_train, y_train, 
-                                        batch_size=min(32, len(x_train)),  # Adjust batch size if not enough samples
-                                        epochs=15, 
-                                        validation_data=(x_test, y_test),
-                                        verbose=0)
-                    progress_bar.progress(80)
+                    # Create and train a linear regression model (much simpler than LSTM)
+                    with st.spinner("Training prediction model..."):
+                        model = create_linear_model(X_train, y_train)
+                    
+                    progress_bar.progress(60)
                     
                     # Make predictions
-                    predictions = model.predict(x_test)
-                    predicted_prices = scaler.inverse_transform(predictions)
-                    actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
-                    progress_bar.progress(95)
+                    predictions = model.predict(X_test)
                     
                     # Calculate RMSE
-                    rmse = np.sqrt(mean_squared_error(actual_prices, predicted_prices))
+                    rmse = np.sqrt(mean_squared_error(y_test, predictions))
+                    
+                    progress_bar.progress(80)
+                    
+                    # Predict future price
+                    last_window = df['Close'].iloc[-window_size:].values
+                    future_prediction = model.predict([last_window])[0]
+                    
+                    # Create index for test data
+                    test_index = df.index[split + window_size:]
                     
                     # Plot results
                     fig, ax = plt.subplots(figsize=(10, 5))
-                    ax.plot(df.index[split+seq_length:], actual_prices, 'b-', label='Actual')
-                    ax.plot(df.index[split+seq_length:], predicted_prices, 'r--', label='Predicted')
+                    
+                    # Plot actual prices
+                    ax.plot(test_index, y_test, 'b-', label='Actual')
+                    
+                    # Plot predicted prices
+                    ax.plot(test_index, predictions, 'r--', label='Predicted')
                     
                     # Add alerts if any exist for this ticker
                     alerts = get_alerts()
@@ -479,7 +467,7 @@ with tabs[0]:
                                     # Draw horizontal line for the alert
                                     ax.axhline(y=alert['price'], color='g', linestyle='-', alpha=0.5)
                                     # Add annotation
-                                    ax.text(df.index[len(df) // 2], alert['price'], 
+                                    ax.text(test_index[len(test_index) // 2], alert['price'], 
                                         f" {alert['type']} ${alert['price']:.2f}", 
                                         verticalalignment='bottom', color='green')
                                 except Exception as e:
@@ -490,26 +478,19 @@ with tabs[0]:
                     progress_bar.progress(100)
                     st.pyplot(fig)
                     
-                    # Future prediction
-                    st.subheader("Future Price Prediction")
-                    
-                    # Create a sequence of the last seq_length points
-                    last_sequence = scaled_data[-seq_length:].reshape(1, seq_length, 1)
-                    
-                    # Predict next day
-                    future_prediction = model.predict(last_sequence)
-                    future_price = scaler.inverse_transform(future_prediction)[0][0]
+                    # Show prediction for next day
+                    st.subheader("Price Prediction")
                     
                     last_actual_price = df['Close'].iloc[-1]
-                    price_change = ((future_price - last_actual_price) / last_actual_price) * 100
+                    price_change = ((future_prediction - last_actual_price) / last_actual_price) * 100
                     
                     direction = "📈" if price_change > 0 else "📉"
-                    st.write(f"### Next Trading Day Prediction: ${future_price:.2f} {direction}")
+                    st.write(f"### Next Trading Day Prediction: ${future_prediction:.2f} {direction}")
                     st.write(f"Expected change: {price_change:.2f}% from current price (${last_actual_price:.2f})")
                     
                     # Show comparison charts if other tickers exist
                     if len(valid_tickers) > 1:
-                        st.subheader("Comparison with Other Stocks")
+                        st.subheader("Market Comparison")
                         try:
                             fig_comp, ax_comp = plt.subplots(figsize=(10, 5))
                             
@@ -578,23 +559,12 @@ with st.sidebar:
                 st.error(f"Error displaying price for {t}: {str(e)}")
     
     # Add stock information websites
-    st.sidebar.header("Stock Information Resources")
+    st.sidebar.header("Stock Resources")
     st.sidebar.markdown("""
-    ### Research & News
     - [Yahoo Finance](https://finance.yahoo.com/)
     - [CNBC](https://www.cnbc.com/stock-markets/)
     - [MarketWatch](https://www.marketwatch.com/)
-    - [Bloomberg](https://www.bloomberg.com/markets/stocks)
     - [Investing.com](https://www.investing.com/)
-    
-    ### Advanced Analysis
-    - [TradingView](https://www.tradingview.com/)
-    - [Seeking Alpha](https://seekingalpha.com/)
-    - [Morningstar](https://www.morningstar.com/)
-    - [Finviz](https://finviz.com/)
-    
-    ### SEC Filings
-    - [SEC EDGAR](https://www.sec.gov/edgar/searchedgar/companysearch)
     """)
 
 st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
