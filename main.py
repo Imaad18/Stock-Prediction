@@ -28,7 +28,7 @@ def load_data(ticker, start_date, end_date):
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
         return df if not df.empty else None
     except Exception as e:
-        st.error(f"Error fetching data: {str(e)}")
+        st.error(f"Error fetching data for {ticker}: {str(e)}")
         return None
 
 @st.cache_resource(show_spinner=False)
@@ -77,7 +77,7 @@ def calculate_indicators(df):
 
 # Function to detect patterns and technical events
 def detect_patterns(df):
-    if len(df) < 100:
+    if df is None or len(df) < 100:
         return None
     
     patterns = {}
@@ -213,7 +213,7 @@ with st.sidebar:
     ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
     compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+    end_date = st.date_input("End Date", pd.to_datetime(datetime.today().strftime('%Y-%m-%d')))  # Default to today
     
     # Add a button to trigger the prediction
     run_prediction = st.button("Run Prediction", type="primary")
@@ -458,11 +458,18 @@ with st.sidebar:
     for t, df_t in valid_tickers.items():
         if not df_t.empty:
             try:
-                # Properly extract the scalar value
-                last_price = df_t['Close'].iloc[-1]
-                if hasattr(last_price, 'values'):  # If it's a pandas Series
-                    last_price = last_price.values[0]
-                    
+                # Get the last price (ensure it's a scalar value)
+                last_price = float(df_t['Close'].iloc[-1])
+                
+                # Get price change from previous close
+                if len(df_t) > 1:
+                    prev_price = float(df_t['Close'].iloc[-2])
+                    price_change = last_price - prev_price
+                    percent_change = (price_change / prev_price) * 100
+                else:
+                    price_change = 0
+                    percent_change = 0
+                
                 # Check if there are any triggered alerts
                 alerts = get_alerts()
                 alert_triggered = False
@@ -470,16 +477,22 @@ with st.sidebar:
                 
                 if t in alerts:
                     for alert in alerts[t]:
-                        if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
-                           (alert['type'] == 'Price Below' and last_price < alert['price']):
-                            alert_triggered = True
-                            alert_message = f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}"
+                        if alert['active']:
+                            if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
+                               (alert['type'] == 'Price Below' and last_price < alert['price']):
+                                alert_triggered = True
+                                alert_message = f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}"
                 
-                # Display price, with alert if triggered
+                # Display price with change and alert if triggered
+                st.metric(
+                    label=t,
+                    value=f"${last_price:.2f}",
+                    delta=f"{price_change:.2f} ({percent_change:.2f}%)",
+                    delta_color="inverse" if price_change < 0 else "normal"
+                )
+                
                 if alert_triggered:
-                    st.metric(label=t, value=f"${float(last_price):.2f}", delta=alert_message)
-                else:
-                    st.metric(label=t, value=f"${float(last_price):.2f}")
+                    st.warning(alert_message)
                     
             except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
