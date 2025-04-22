@@ -1,3 +1,14 @@
+# At the beginning of your script
+try:
+    import tensorflow as tf
+    from keras.models import Sequential
+    from keras.layers import Dense, LSTM, Dropout
+except ImportError:
+    st.error("TensorFlow/Keras couldn't be imported. This app requires TensorFlow to run.")
+    st.info("If you're running this app on Streamlit Cloud, please contact the developer for a compatible version.")
+    st.stop()
+
+
 import yfinance as yf
 import numpy as np
 import pandas as pd
