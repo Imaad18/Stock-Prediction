@@ -8,19 +8,20 @@ from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LinearRegression
 import concurrent.futures
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Enable caching for expensive operations
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
     try:
-        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        # Add 1 day to end_date to ensure we get the most recent data
+        df = yf.download(ticker, start=start_date, end=end_date + timedelta(days=1), progress=False)
         return df if not df.empty else None
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
         return None
 
-# Function to create a linear regression model instead of LSTM
+# Function to create a linear regression model
 def create_linear_model(X_train, y_train):
     model = LinearRegression()
     model.fit(X_train, y_train)
@@ -51,7 +52,6 @@ def calculate_indicators(df):
         loss[loss > 0] = 0
         loss = abs(loss)
         
-        # Avoid division by zero
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
         
@@ -86,19 +86,20 @@ def detect_patterns(df):
         # Detect basic patterns
         
         # Moving average crossovers
-        if df_analysis['SMA20'].iloc[-2] < df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] > df_analysis['SMA50'].iloc[-1]:
-            patterns['Golden Cross'] = {
-                'type': 'bullish',
-                'desc': 'Short-term momentum is turning positive (20-day SMA crossed above 50-day SMA)',
-                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-            }
-        
-        if df_analysis['SMA20'].iloc[-2] > df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] < df_analysis['SMA50'].iloc[-1]:
-            patterns['Death Cross'] = {
-                'type': 'bearish',
-                'desc': 'Short-term momentum is turning negative (20-day SMA crossed below 50-day SMA)',
-                'date': df_analysis.index[-1].strftime('%Y-%m-%d')
-            }
+        if 'SMA20' in df_analysis.columns and 'SMA50' in df_analysis.columns:
+            if df_analysis['SMA20'].iloc[-2] < df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] > df_analysis['SMA50'].iloc[-1]:
+                patterns['Golden Cross'] = {
+                    'type': 'bullish',
+                    'desc': 'Short-term momentum is turning positive (20-day SMA crossed above 50-day SMA)',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
+            
+            if df_analysis['SMA20'].iloc[-2] > df_analysis['SMA50'].iloc[-2] and df_analysis['SMA20'].iloc[-1] < df_analysis['SMA50'].iloc[-1]:
+                patterns['Death Cross'] = {
+                    'type': 'bearish',
+                    'desc': 'Short-term momentum is turning negative (20-day SMA crossed below 50-day SMA)',
+                    'date': df_analysis.index[-1].strftime('%Y-%m-%d')
+                }
         
         # Support/Resistance
         last_close = df_analysis['Close'].iloc[-1]
@@ -114,14 +115,14 @@ def detect_patterns(df):
                 }
         
         # Bollinger Band signals
-        if df_analysis['Close'].iloc[-1] > df_analysis['Upper_Band'].iloc[-1]:
+        if 'Upper_Band' in df_analysis.columns and df_analysis['Close'].iloc[-1] > df_analysis['Upper_Band'].iloc[-1]:
             patterns['Overbought'] = {
                 'type': 'bearish',
                 'desc': 'Price is above upper Bollinger Band, potentially overbought',
                 'date': df_analysis.index[-1].strftime('%Y-%m-%d')
             }
         
-        if df_analysis['Close'].iloc[-1] < df_analysis['Lower_Band'].iloc[-1]:
+        if 'Lower_Band' in df_analysis.columns and df_analysis['Close'].iloc[-1] < df_analysis['Lower_Band'].iloc[-1]:
             patterns['Oversold'] = {
                 'type': 'bullish',
                 'desc': 'Price is below lower Bollinger Band, potentially oversold',
@@ -183,7 +184,8 @@ def save_alert(ticker, alert_type, price, active=True):
         'type': alert_type,
         'price': float(price),
         'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
-        'active': active
+        'active': active,
+        'triggered': False
     })
     
     # Update session state
@@ -213,7 +215,7 @@ with st.sidebar:
     ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
     compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-12-31"))
+    end_date = st.date_input("End Date", datetime.now())
     
     # Add a button to trigger the prediction
     run_prediction = st.button("Run Analysis", type="primary")
@@ -291,7 +293,8 @@ with tabs[2]:
                     col1, col2, col3 = st.columns([3, 1, 1])
                     
                     with col1:
-                        st.write(f"**{alert['type']}**: ${alert['price']:.2f}")
+                        status = "✅" if alert['triggered'] else "⏳"
+                        st.write(f"{status} **{alert['type']}**: ${alert['price']:.2f}")
                     
                     with col2:
                         st.write(f"Created: {alert['created_at']}")
@@ -428,7 +431,7 @@ with tabs[0]:
                     X_train, X_test = X[:split], X[split:]
                     y_train, y_test = y[:split], y[split:]
                     
-                    # Create and train a linear regression model (much simpler than LSTM)
+                    # Create and train a linear regression model
                     with st.spinner("Training prediction model..."):
                         model = create_linear_model(X_train, y_train)
                     
@@ -508,8 +511,6 @@ with tabs[0]:
                             st.error(f"Error creating comparison chart: {str(e)}")
             except Exception as e:
                 st.error(f"Error during prediction: {str(e)}")
-                import traceback
-                st.error(traceback.format_exc())
 
 # Show latest prices in sidebar
 with st.sidebar:
@@ -517,36 +518,30 @@ with st.sidebar:
     for t, df_t in valid_tickers.items():
         if not df_t.empty:
             try:
-                # Properly extract the scalar value
+                # Get the latest price
                 last_price = df_t['Close'].iloc[-1]
-                if hasattr(last_price, 'item'):  # If it's a numpy value
-                    last_price = last_price.item()
-                elif hasattr(last_price, 'values'):  # If it's a pandas Series
-                    last_price = last_price.values[0]
-                    
+                
                 # Calculate price change percentage
                 if len(df_t) > 1:
                     prev_price = df_t['Close'].iloc[-2]
-                    if hasattr(prev_price, 'item'):
-                        prev_price = prev_price.item()
-                    elif hasattr(prev_price, 'values'):
-                        prev_price = prev_price.values[0]
-                    
                     price_delta = f"{((last_price - prev_price) / prev_price) * 100:.2f}%"
                 else:
                     price_delta = None
-                    
-                # Check if there are any triggered alerts
+                
+                # Check alerts for this ticker
                 alerts = get_alerts()
                 alert_triggered = False
                 alert_message = ""
                 
                 if t in alerts:
-                    for alert in alerts[t]:
-                        if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
-                           (alert['type'] == 'Price Below' and last_price < alert['price']):
-                            alert_triggered = True
-                            alert_message = f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}"
+                    for i, alert in enumerate(alerts[t]):
+                        if alert['active'] and not alert['triggered']:
+                            if (alert['type'] == 'Price Above' and last_price > alert['price']) or \
+                               (alert['type'] == 'Price Below' and last_price < alert['price']):
+                                alert_triggered = True
+                                alert_message = f"⚠️ Alert: {alert['type']} ${alert['price']:.2f}"
+                                # Mark alert as triggered
+                                st.session_state.alerts[t][i]['triggered'] = True
                 
                 # Display price, with alert if triggered
                 if alert_triggered:
