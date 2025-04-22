@@ -1,9 +1,18 @@
-streamlit>=1.20.0
-yfinance>=0.2.18
-numpy>=1.22.0
-pandas>=1.5.0
+# Core Dependencies
+streamlit>=1.22.0
+numpy>=1.21.0
+pandas>=1.3.0
 matplotlib>=3.5.0
-scikit-learn>=1.0.0
-# TensorFlow is optional - app will use scikit-learn if not available
-# tensorflow>=2.10.0
 
+# Data Retrieval
+yfinance>=0.1.63
+
+# Machine Learning - Use TensorFlow CPU version to avoid compatibility issues
+tensorflow-cpu>=2.9.0
+scikit-learn>=1.0.0
+
+# Technical Analysis
+pandas-ta>=0.3.14b
+
+# Utilities
+python-dateutil>=2.8.2
