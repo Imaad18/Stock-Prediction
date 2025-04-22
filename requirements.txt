@@ -1,10 +1,16 @@
-streamlit==1.16.0
-yfinance==0.1.70
-pandas==1.4.3
-numpy==1.23.4
-matplotlib==3.5.2
-tensorflow==2.11.0
-scikit-learn==1.0.2
-keras==2.11.0
-requests==2.28.1
-nltk==3.7
+# Core Dependencies
+streamlit==1.22.0
+numpy==1.24.3
+pandas==2.0.1
+matplotlib==3.7.1
+
+# Data Retrieval
+yfinance==0.2.27
+
+# Machine Learning
+tensorflow==2.12.0
+scikit-learn==1.2.2
+keras==2.12.0
+
+# Utilities
+python-dateutil==2.8.2
