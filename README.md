@@ -1,23 +1,51 @@
-# Advanced Stock Prediction App
+**Live Demo in Form of Web App:**
+https://stock-prediction-x6scrftemuuhcjwradxhs6.streamlit.app/
 
-![App Screenshot](screenshot.png)
+# Stock Analysis and Prediction Tool
 
-A comprehensive stock analysis tool featuring:
-- LSTM-based price prediction
-- Technical pattern detection
-- Price alert system
-- Multi-stock comparison
+# Overview
+* This is a comprehensive stock analysis and prediction application built with Python and Streamlit. The tool provides three main functionalities:
 
-## Features
+1. Price Prediction: Uses linear regression to forecast future stock prices based on historical data
 
-- **Price Prediction**: Uses LSTM neural networks to forecast stock prices
-- **Technical Analysis**: Detects common patterns like Golden Cross, Death Cross, etc.
-- **Alerts System**: Set price level alerts with visual indicators
-- **Research Resources**: Quick links to financial data sources
+2. Pattern Recognition: Identifies technical patterns and indicators in stock charts
 
-## Installation
+3. Price Alerts: Allows users to set and manage custom price alerts
 
-1. Clone the repository:
-```bash
-git clone https://github.com/your-repo/stock-prediction.git
-cd stock-prediction
+# Features
+
+# Core Functionalities
+
+* Data Loading: Fetches stock data from Yahoo Finance (using yfinance)
+
+* Technical Analysis: Calculates various technical indicators including:
+
+* Simple Moving Averages (20-day, 50-day, 200-day)
+
+* Bollinger Bands
+
+* Relative Strength Index (RSI)
+
+* Pattern Detection: Identifies common technical patterns like:
+
+* Golden/Death Crosses
+
+* Support/Resistance Levels
+
+* Overbought/Oversold Conditions
+
+* Strong Trends
+
+* Price Prediction: Uses linear regression to predict future prices
+
+* Alert System: Set price alerts that trigger when conditions are met
+
+* User Interface
+
+1. Interactive Streamlit dashboard with multiple tabs
+
+2. Sidebar for input parameters and quick price views
+
+3. Visual charts showing price history and predictions
+
+4. Alert management system
