@@ -10,6 +10,9 @@ import concurrent.futures
 import time
 from datetime import datetime, timedelta
 
+# Initialize the start time at the beginning of the script
+start_time = time.time()
+
 # Enable caching for expensive operations
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_data(ticker, start_date, end_date):
@@ -181,47 +184,356 @@ def detect_patterns(df):
         st.error(f"Error detecting patterns: {str(e)}")
         return {}, df  # Return empty patterns if detection fails
 
-# Prediction tab content - Fix for LinearRegression reshaping
-# Add this to the relevant part of your tabs[0] section:
-def create_prediction_model(df):
-    window_size = 30
-    X = []
-    y = []
-    
-    for i in range(window_size, len(df)):
-        X.append(df['Close'].iloc[i-window_size:i].values)
-        y.append(df['Close'].iloc[i])
-    
-    X = np.array(X)
-    y = np.array(y)
-    
-    # Ensure we have enough data
-    if len(X) == 0 or len(y) == 0:
-        return None, None, None, None
-    
-    # Train-test split (80% train, 20% test)
-    split = int(0.8 * len(X))
-    if split == 0:
-        split = 1  # Ensure at least one training sample
-    
-    X_train, X_test = X[:split], X[split:]
-    y_train, y_test = y[:split], y[split:]
-    
-    # Important: Reshape for LinearRegression
-    X_train_2d = X_train.reshape(X_train.shape[0], -1)
-    X_test_2d = X_test.reshape(X_test.shape[0], -1)
-    
-    # Create and train model
-    model = LinearRegression()
-    model.fit(X_train_2d, y_train)
-    
-    # Make predictions
-    predictions = model.predict(X_test_2d)
-    
-    return model, X_test_2d, y_test, predictions, split, window_size
+# Helper function to load and save alerts
+def get_alerts():
+    if 'alerts' not in st.session_state:
+        st.session_state.alerts = {}
+    return st.session_state.alerts
 
-# Fix for sidebar latest prices display
-def display_latest_prices(valid_tickers):
+def save_alert(ticker, alert_type, price, active=True):
+    alerts = get_alerts()
+    if ticker not in alerts:
+        alerts[ticker] = []
+    
+    # Add new alert
+    alerts[ticker].append({
+        'type': alert_type,
+        'price': float(price),
+        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'active': active,
+        'triggered': False
+    })
+    
+    # Update session state
+    st.session_state.alerts = alerts
+
+def delete_alert(ticker, alert_index):
+    alerts = get_alerts()
+    if ticker in alerts and alert_index < len(alerts[ticker]):
+        alerts[ticker].pop(alert_index)
+        st.session_state.alerts = alerts
+        return True
+    return False
+
+# Streamlit App
+st.title("⚡ Stock Analysis and Prediction")
+
+# Initialize session state
+if 'tab' not in st.session_state:
+    st.session_state.tab = "Prediction"
+
+if 'alerts' not in st.session_state:
+    st.session_state.alerts = {}
+
+# Sidebar inputs
+with st.sidebar:
+    st.header("Input Parameters")
+    ticker = st.text_input("Main Stock Ticker", "AAPL").upper()
+    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
+    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
+    end_date = st.date_input("End Date", datetime.now())
+    
+    # Add a button to trigger the prediction
+    run_prediction = st.button("Run Analysis", type="primary")
+
+# Create tabs
+tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
+
+# Get all tickers to fetch
+all_tickers = [ticker] + [t.strip() for t in compare_tickers.split(",") if t.strip()]
+all_tickers = list(set(all_tickers))  # Remove duplicates
+
+# Fetch data in parallel
+valid_tickers = {}
+invalid_tickers = set()
+
+with st.spinner("Loading stock data..."):
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
+        data = {}
+        for future in concurrent.futures.as_completed(futures):
+            ticker_name = futures[future]
+            result = future.result()
+            if result is not None and not result.empty:
+                valid_tickers[ticker_name] = result
+            else:
+                invalid_tickers.add(ticker_name)
+
+if invalid_tickers:
+    st.warning(f"Could not fetch data for: {', '.join(invalid_tickers)}")
+
+if not valid_tickers:
+    st.error("No valid stock data available. Please check your inputs.")
+    st.stop()
+
+# Process alerts
+with tabs[2]:
+    st.header("Price Alerts")
+    st.write("Set alerts for specific price levels or conditions.")
+    
+    if ticker in valid_tickers:
+        current_price = valid_tickers[ticker]['Close'].iloc[-1]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            alert_type = st.selectbox(
+                "Alert Type", 
+                ["Price Above", "Price Below"]
+            )
+        
+        with col2:
+            alert_price = st.number_input(
+                "Target Price", 
+                min_value=0.01, 
+                value=float(current_price),
+                format="%.2f"
+            )
+        
+        if st.button("Add Alert"):
+            save_alert(ticker, alert_type, alert_price)
+            st.success(f"Alert added for {ticker}: {alert_type} ${alert_price:.2f}")
+    
+    # Display existing alerts
+    alerts = get_alerts()
+    
+    if not any(alerts.values()):
+        st.info("No alerts set. Add your first alert above.")
+    else:
+        for t, ticker_alerts in alerts.items():
+            if ticker_alerts:
+                st.subheader(f"{t} Alerts")
+                
+                for i, alert in enumerate(ticker_alerts):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        status = "✅" if alert['triggered'] else "⏳"
+                        st.write(f"{status} **{alert['type']}**: ${alert['price']:.2f}")
+                    
+                    with col2:
+                        st.write(f"Created: {alert['created_at']}")
+                    
+                    with col3:
+                        if st.button("Delete", key=f"del_{t}_{i}"):
+                            if delete_alert(t, i):
+                                st.success(f"Alert deleted")
+                                time.sleep(0.5)  # Give time for the success message to appear
+                                st.rerun()
+
+# Pattern Recognition tab
+with tabs[1]:
+    st.header("Technical Patterns & Events")
+    
+    if ticker in valid_tickers:
+        df = valid_tickers[ticker]
+        
+        # Detect patterns
+        with st.spinner("Analyzing patterns..."):
+            result = detect_patterns(df)
+            
+        if result is not None:
+            patterns, df_ta = result
+            
+            if patterns and len(patterns) > 0:
+                # Display patterns in cards
+                for pattern_name, details in patterns.items():
+                    col1, col2 = st.columns([1, 3])
+                    
+                    with col1:
+                        if details['type'] == 'bullish':
+                            st.markdown("### 🟢")
+                        elif details['type'] == 'bearish':
+                            st.markdown("### 🔴")
+                        else:
+                            st.markdown("### ⚪")
+                    
+                    with col2:
+                        st.subheader(pattern_name)
+                        st.write(details['desc'])
+                        st.caption(f"Detected on {details['date']}")
+                    
+                    st.divider()
+            else:
+                st.info("No significant patterns detected in the current timeframe.")
+            
+            # Display technical indicators if df_ta is not None
+            if df_ta is not None and not df_ta.empty:
+                st.subheader("Technical Indicators")
+                
+                try:
+                    # Create indicator chart
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.plot(df_ta.index, df_ta['Close'], label='Price')
+                    
+                    # Only plot SMAs if they exist in the dataframe
+                    for sma_column, label in [('SMA20', '20-day SMA'), ('SMA50', '50-day SMA'), ('SMA200', '200-day SMA')]:
+                        if sma_column in df_ta.columns:
+                            ax.plot(df_ta.index, df_ta[sma_column], label=label, linestyle='--')
+                    
+                    # Highlighting potential patterns
+                    if patterns and len(patterns) > 0:
+                        for pattern, details in patterns.items():
+                            try:
+                                pattern_date = pd.to_datetime(details['date'])
+                                if pattern_date in df_ta.index:
+                                    idx = df_ta.index.get_loc(pattern_date)
+                                    if idx > 0 and idx < len(df_ta):
+                                        price = df_ta['Close'].iloc[idx]
+                                        if details['type'] == 'bullish':
+                                            ax.plot(pattern_date, price, 'go', markersize=10)
+                                        elif details['type'] == 'bearish':
+                                            ax.plot(pattern_date, price, 'ro', markersize=10)
+                                        else:
+                                            ax.plot(pattern_date, price, 'ko', markersize=10)
+                            except Exception as e:
+                                st.error(f"Error highlighting pattern {pattern}: {str(e)}")
+                    
+                    ax.set_title(f"{ticker} Price with Moving Averages")
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    st.pyplot(fig)
+                except Exception as e:
+                    st.error(f"Error creating technical indicators chart: {str(e)}")
+        else:
+            st.info("Not enough data to analyze patterns. Select a longer time period.")
+
+# Prediction tab content
+with tabs[0]:
+    # Show main stock data quickly
+    if run_prediction:
+        main_df = valid_tickers.get(ticker)
+        if main_df is not None:
+            with st.expander(f"📊 {ticker} Complete Stock Data (Last 20 Days)"):
+                # Show full data table with all columns
+                st.dataframe(main_df.tail(20))
+
+    # Prediction only runs when button is clicked and we have enough data
+    if run_prediction and ticker in valid_tickers:
+        df = valid_tickers[ticker][["Close"]]  # Use only Close for prediction
+        if len(df) < 60:
+            st.warning("Not enough data for prediction. Please select a longer time period.")
+        else:
+            try:
+                # Progress bar for user feedback
+                progress_bar = st.progress(0)
+                
+                # Create features (using last 30 days to predict next day)
+                window_size = 30
+                X = []
+                y = []
+                
+                for i in range(window_size, len(df)):
+                    X.append(df['Close'].iloc[i-window_size:i].values)
+                    y.append(df['Close'].iloc[i])
+                
+                X = np.array(X)
+                y = np.array(y)
+                
+                # Ensure we have enough data
+                if len(X) == 0 or len(y) == 0:
+                    st.warning("Not enough data points to create training sequences.")
+                    if progress_bar:
+                        progress_bar.empty()
+                else:
+                    progress_bar.progress(30)
+                    
+                    # Train-test split (80% train, 20% test)
+                    split = int(0.8 * len(X))
+                    if split == 0:
+                        split = 1  # Ensure at least one training sample
+                    
+                    X_train, X_test = X[:split], X[split:]
+                    y_train, y_test = y[:split], y[split:]
+                    
+                    # Reshape X_train and X_test for LinearRegression
+                    X_train_2d = X_train.reshape(X_train.shape[0], -1)
+                    X_test_2d = X_test.reshape(X_test.shape[0], -1)
+                    
+                    # Create and train a linear regression model
+                    with st.spinner("Training prediction model..."):
+                        model = create_linear_model(X_train_2d, y_train)
+                    
+                    progress_bar.progress(60)
+                    
+                    # Make predictions
+                    predictions = model.predict(X_test_2d)
+                    
+                    # Calculate RMSE
+                    rmse = np.sqrt(mean_squared_error(y_test, predictions))
+                    
+                    progress_bar.progress(80)
+                    
+                    # Predict future price
+                    last_window = df['Close'].iloc[-window_size:].values
+                    last_window_2d = last_window.reshape(1, -1)  # Reshape for prediction
+                    future_prediction = model.predict(last_window_2d)[0]
+                    
+                    # Create index for test data
+                    test_index = df.index[split + window_size:]
+                    
+                    # Plot results
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    
+                    # Plot actual prices
+                    ax.plot(test_index, y_test, 'b-', label='Actual')
+                    
+                    # Plot predicted prices
+                    ax.plot(test_index, predictions, 'r--', label='Predicted')
+                    
+                    # Add alerts if any exist for this ticker
+                    alerts = get_alerts()
+                    if ticker in alerts and alerts[ticker]:
+                        for alert in alerts[ticker]:
+                            if alert['active']:
+                                try:
+                                    # Draw horizontal line for the alert
+                                    ax.axhline(y=alert['price'], color='g', linestyle='-', alpha=0.5)
+                                    # Add annotation
+                                    ax.text(test_index[len(test_index) // 2], alert['price'], 
+                                        f" {alert['type']} ${alert['price']:.2f}", 
+                                        verticalalignment='bottom', color='green')
+                                except Exception as e:
+                                    st.warning(f"Could not display alert: {str(e)}")
+                    
+                    ax.set_title(f"{ticker} Price Prediction (RMSE: {rmse:.2f})")
+                    ax.legend()
+                    progress_bar.progress(100)
+                    st.pyplot(fig)
+                    
+                    # Show prediction for next day
+                    st.subheader("Price Prediction")
+                    
+                    last_actual_price = float(df['Close'].iloc[-1])
+                    price_change = ((future_prediction - last_actual_price) / last_actual_price) * 100
+                    
+                    direction = "📈" if price_change > 0 else "📉"
+                    st.write(f"### Next Trading Day Prediction: ${future_prediction:.2f} {direction}")
+                    st.write(f"Expected change: {price_change:.2f}% from current price (${last_actual_price:.2f})")
+                    
+                    # Show comparison charts if other tickers exist
+                    if len(valid_tickers) > 1:
+                        st.subheader("Market Comparison")
+                        try:
+                            fig_comp, ax_comp = plt.subplots(figsize=(10, 5))
+                            
+                            # Normalize all prices to same scale for better comparison
+                            for t, df_t in valid_tickers.items():
+                                # Convert to percentage change from first day
+                                normalized = df_t['Close'] / df_t['Close'].iloc[0] * 100
+                                ax_comp.plot(df_t.index, normalized, label=f"{t} ({df_t['Close'].iloc[-1]:.2f})")
+                                
+                            ax_comp.set_title("Normalized Stock Price Comparison (Base=100)")
+                            ax_comp.legend()
+                            ax_comp.grid(True, alpha=0.3)
+                            st.pyplot(fig_comp)
+                        except Exception as e:
+                            st.error(f"Error creating comparison chart: {str(e)}")
+            except Exception as e:
+                st.error(f"Error during prediction: {str(e)}")
+
+# Show latest prices in sidebar
+with st.sidebar:
     st.header("Latest Prices")
     for t, df_t in valid_tickers.items():
         if not df_t.empty:
@@ -261,8 +573,6 @@ def display_latest_prices(valid_tickers):
             except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
     
-        
-    
     # Add stock information websites
     st.sidebar.header("Stock Resources")
     st.sidebar.markdown("""
@@ -272,4 +582,6 @@ def display_latest_prices(valid_tickers):
     - [Investing.com](https://www.investing.com/)
     """)
 
-st.sidebar.info(f"Data loaded in {time.time()-start_time:.2f} seconds")
+# Calculate and show elapsed time properly
+elapsed_time = time.time() - start_time
+st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")
