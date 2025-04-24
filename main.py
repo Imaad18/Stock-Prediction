@@ -329,7 +329,7 @@ with st.sidebar:
     run_prediction = st.button("Run Analysis", type="primary")
 
 # Create tabs
-tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast])
+tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 
 # Get all tickers to fetch
 all_tickers = [ticker]
