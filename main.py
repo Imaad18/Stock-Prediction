@@ -14,7 +14,6 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-
 # Try importing statsmodels components with graceful fallback
 try:
     from statsmodels.tsa.arima.model import ARIMA
@@ -237,7 +236,6 @@ def delete_alert(ticker, alert_index):
         return True
     return False
 
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def create_forecast_models(df, forecast_days=30):
     """
@@ -345,9 +343,9 @@ tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 all_tickers = [ticker]
 for t in compare_tickers:
     sanitized = t.strip().upper()
-    if sanitized.length > 1 and sanitized not in all_tickers:
-    all_tickers.append(sanitized)
-    all_tickers = list(set(all_tickers))
+    if len(sanitized) > 1 and sanitized not in all_tickers:
+        all_tickers.append(sanitized)
+all_tickers = list(set(all_tickers))
 
 # Fetch data in parallel
 valid_tickers = {}
@@ -845,6 +843,7 @@ with tabs[3]:  # This is the new Forecast tab
                         st.markdown(f"<h3 style='text-align: center; color: {color};'>{pct_change:.2f}%</h3>", unsafe_allow_html=True)
                         st.markdown("<p style='text-align: center;'>Average Projected Change</p>", unsafe_allow_html=True)
                     
+                                       
                     with col3:
                         # Calculate average price at forecast period/2 (middle point)
                         mid_point = forecast_period // 2
@@ -894,3 +893,20 @@ with tabs[3]:  # This is the new Forecast tab
 # Calculate and show elapsed time properly
 elapsed_time = time.time() - start_time
 st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")
+
+   
+    
+ 
+    
+    
+
+
+
+
+
+
+
+
+
+
+
