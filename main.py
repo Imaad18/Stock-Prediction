@@ -343,10 +343,10 @@ tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 
 # Get all tickers to fetch
 all_tickers = [ticker]
-    for t in compare_tickers:
-        sanitized = t.strip().upper()
-        if sanitized.length > 1 and sanitized not in all_tickers:
-            all_tickers.append(sanitized)
+for t in compare_tickers:
+    sanitized = t.strip().upper()
+    if sanitized.length > 1 and sanitized not in all_tickers:
+    all_tickers.append(sanitized)
     all_tickers = list(set(all_tickers))
 
 # Fetch data in parallel
