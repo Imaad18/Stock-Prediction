@@ -15,6 +15,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
+# Try importing statsmodels components with graceful fallback
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    STATSMODELS_AVAILABLE = True
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+    st.warning("Advanced forecasting features unavailable. Install 'statsmodels' package for full functionality.")
+
 # Initialize the start time at the beginning of the script
 start_time = time.time()
 
@@ -228,6 +237,7 @@ def delete_alert(ticker, alert_index):
         return True
     return False
 
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def create_forecast_models(df, forecast_days=30):
     """
@@ -248,33 +258,34 @@ def create_forecast_models(df, forecast_days=30):
     dates = df.index
     
     try:
-        # 1. ARIMA Model
-        try:
-            # Try simple ARIMA model (1,1,1)
-            arima_model = ARIMA(close_prices, order=(1, 1, 1))
-            arima_result = arima_model.fit()
-            arima_forecast = arima_result.forecast(steps=forecast_days)
-            forecasts['ARIMA'] = arima_forecast
-        except Exception as e:
-            st.warning(f"ARIMA model error: {str(e)}")
+        # Only try ARIMA and Exponential if statsmodels is available
+        if STATSMODELS_AVAILABLE:
+            # 1. ARIMA Model
+            try:
+                # Try simple ARIMA model (1,1,1)
+                arima_model = ARIMA(close_prices, order=(1, 1, 1))
+                arima_result = arima_model.fit()
+                arima_forecast = arima_result.forecast(steps=forecast_days)
+                forecasts['ARIMA'] = arima_forecast
+            except Exception as e:
+                st.warning(f"ARIMA model error: {str(e)}")
 
-
-        # 2. Exponential Smoothing Model
-        try:
-            # Holt-Winters exponential smoothing
-            exp_model = ExponentialSmoothing(
-                close_prices, 
-                trend='add', 
-                seasonal='add', 
-                seasonal_periods=5
-            )
-            exp_result = exp_model.fit()
-            exp_forecast = exp_result.forecast(forecast_days)
-            forecasts['Exponential'] = exp_forecast
-        except Exception as e:
-            st.warning(f"Exponential Smoothing error: {str(e)}")
+            # 2. Exponential Smoothing Model
+            try:
+                # Holt-Winters exponential smoothing
+                exp_model = ExponentialSmoothing(
+                    close_prices, 
+                    trend='add', 
+                    seasonal='add', 
+                    seasonal_periods=5
+                )
+                exp_result = exp_model.fit()
+                exp_forecast = exp_result.forecast(forecast_days)
+                forecasts['Exponential'] = exp_forecast
+            except Exception as e:
+                st.warning(f"Exponential Smoothing error: {str(e)}")
         
-        # 3. Linear Regression (simple trend-based)
+        # 3. Linear Regression (simple trend-based) - always available as sklearn should be installed
         try:
             # Use linear regression for trend projection
             x = np.arange(len(close_prices)).reshape(-1, 1)
@@ -305,8 +316,7 @@ def create_forecast_models(df, forecast_days=30):
     except Exception as e:
         st.error(f"Error creating forecast models: {str(e)}")
         return None
-
-
+    
 # Streamlit App
 st.title("⚡ Stock Analysis and Prediction")
 
