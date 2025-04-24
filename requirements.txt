@@ -4,5 +4,5 @@ pandas>=1.1.5
 matplotlib>=3.3.4
 streamlit>=1.10.0
 scikit-learn>=0.24.2
-statsmodel
-plotly
+statsmodels>=0.12.2
+plotly>=5.0.0
