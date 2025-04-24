@@ -259,7 +259,7 @@ def create_forecast_models(df, forecast_days=30):
             st.warning(f"ARIMA model error: {str(e)}")
 
 
-  # 2. Exponential Smoothing Model
+        # 2. Exponential Smoothing Model
         try:
             # Holt-Winters exponential smoothing
             exp_model = ExponentialSmoothing(
@@ -290,7 +290,7 @@ def create_forecast_models(df, forecast_days=30):
         except Exception as e:
             st.warning(f"Linear trend forecast error: {str(e)}")
         
-           # Generate future dates for the forecasts
+        # Generate future dates for the forecasts
         last_date = dates[-1]
         future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_days)
         
@@ -684,7 +684,7 @@ with tabs[3]:  # This is the new Forecast tab
         
         forecast_button = st.button("Generate Forecast", key="forecast_btn")
         
-         if forecast_button:
+        if forecast_button:
             with st.spinner("Calculating forecasts..."):
                 # Create forecast models
                 forecast_data = create_forecast_models(df, forecast_days=forecast_period)
