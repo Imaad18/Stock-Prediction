@@ -37,7 +37,7 @@ def load_data(ticker, start_date, end_date):
         ticker = ticker.strip()  # Ensure no whitespace
         
         # Add 1 day to end_date to ensure we get the most recent data
-        df = yf.download(ticker, start=start_date, end=end_date + timedelta(days=1), progress=False)
+        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
         return df if not df.empty else None
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
@@ -330,8 +330,8 @@ if 'alerts' not in st.session_state:
 # Sidebar inputs
 with st.sidebar:
     st.header("Input Parameters")
-    ticker = st.text_input("Main Stock Ticker", "AAPL").upper().strip()
-    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").upper()
+    ticker = st.text_input("Main Stock Ticker", "AAPL").strip().upper()
+    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").split(",")
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
     
@@ -342,10 +342,12 @@ with st.sidebar:
 tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 
 # Get all tickers to fetch
-all_tickers = [ticker]
-if compare_tickers:
-    all_tickers += [t.strip() for t in compare_tickers.split(",") if t.strip()]
-all_tickers = list(set(all_tickers))  # Remove duplicates
+ all_tickers = [ticker]
+    for t in compare_tickers:
+        sanitized = t.strip().upper()
+        if sanitized.length > 1 and sanitized not in all_tickers:
+            all_tickers.append(sanitized)
+    all_tickers = list(set(all_tickers))
 
 # Fetch data in parallel
 valid_tickers = {}
