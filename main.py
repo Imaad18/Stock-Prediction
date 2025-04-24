@@ -342,7 +342,7 @@ with st.sidebar:
 tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 
 # Get all tickers to fetch
- all_tickers = [ticker]
+all_tickers = [ticker]
     for t in compare_tickers:
         sanitized = t.strip().upper()
         if sanitized.length > 1 and sanitized not in all_tickers:
