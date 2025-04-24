@@ -9,6 +9,11 @@ from sklearn.linear_model import LinearRegression
 import concurrent.futures
 import time
 from datetime import datetime, timedelta
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
 
 # Initialize the start time at the beginning of the script
 start_time = time.time()
@@ -223,6 +228,85 @@ def delete_alert(ticker, alert_index):
         return True
     return False
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def create_forecast_models(df, forecast_days=30):
+    """
+    Create and return multiple forecasting models.
+    
+    Args:
+        df: DataFrame with 'Close' prices
+        forecast_days: Number of days to forecast
+        
+    Returns:
+        Dictionary with forecast results from different models
+    """
+    if df is None or len(df) < 60:
+        return None
+    
+    forecasts = {}
+    close_prices = df['Close'].values
+    dates = df.index
+    
+    try:
+        # 1. ARIMA Model
+        try:
+            # Try simple ARIMA model (1,1,1)
+            arima_model = ARIMA(close_prices, order=(1, 1, 1))
+            arima_result = arima_model.fit()
+            arima_forecast = arima_result.forecast(steps=forecast_days)
+            forecasts['ARIMA'] = arima_forecast
+        except Exception as e:
+            st.warning(f"ARIMA model error: {str(e)}")
+
+
+  # 2. Exponential Smoothing Model
+        try:
+            # Holt-Winters exponential smoothing
+            exp_model = ExponentialSmoothing(
+                close_prices, 
+                trend='add', 
+                seasonal='add', 
+                seasonal_periods=5
+            )
+            exp_result = exp_model.fit()
+            exp_forecast = exp_result.forecast(forecast_days)
+            forecasts['Exponential'] = exp_forecast
+        except Exception as e:
+            st.warning(f"Exponential Smoothing error: {str(e)}")
+        
+        # 3. Linear Regression (simple trend-based)
+        try:
+            # Use linear regression for trend projection
+            x = np.arange(len(close_prices)).reshape(-1, 1)
+            y = close_prices
+            
+            model = LinearRegression()
+            model.fit(x, y)
+            
+            # Forecast future dates
+            future_x = np.arange(len(close_prices), len(close_prices) + forecast_days).reshape(-1, 1)
+            linear_forecast = model.predict(future_x)
+            forecasts['Linear'] = linear_forecast
+        except Exception as e:
+            st.warning(f"Linear trend forecast error: {str(e)}")
+        
+           # Generate future dates for the forecasts
+        last_date = dates[-1]
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_days)
+        
+        return {
+            'forecasts': forecasts,
+            'actual_dates': dates,
+            'actual_prices': close_prices,
+            'future_dates': future_dates,
+            'last_price': float(close_prices[-1])
+        }
+        
+    except Exception as e:
+        st.error(f"Error creating forecast models: {str(e)}")
+        return None
+
+
 # Streamlit App
 st.title("⚡ Stock Analysis and Prediction")
 
@@ -245,7 +329,7 @@ with st.sidebar:
     run_prediction = st.button("Run Analysis", type="primary")
 
 # Create tabs
-tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts"])
+tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast])
 
 # Get all tickers to fetch
 all_tickers = [ticker]
@@ -582,7 +666,210 @@ with st.sidebar:
                     
             except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
+
+with tabs[3]:  # This is the new Forecast tab
+    st.header("Long-Term Price Forecast")
     
+    if ticker in valid_tickers:
+        df = valid_tickers[ticker]
+        
+        # Add forecast period selection
+        forecast_period = st.slider(
+            "Forecast Period (Days)", 
+            min_value=7, 
+            max_value=90, 
+            value=30,
+            step=7
+        )
+        
+        forecast_button = st.button("Generate Forecast", key="forecast_btn")
+        
+         if forecast_button:
+            with st.spinner("Calculating forecasts..."):
+                # Create forecast models
+                forecast_data = create_forecast_models(df, forecast_days=forecast_period)
+                
+                if forecast_data and 'forecasts' in forecast_data and len(forecast_data['forecasts']) > 0:
+                    # Create interactive Plotly chart
+                    fig = make_subplots(
+                        rows=2, 
+                        cols=1,
+                        shared_xaxes=True,
+                        vertical_spacing=0.1,
+                        subplot_titles=("Price Forecast", "Forecast Comparison"),
+                        row_heights=[0.7, 0.3]
+                    )
+                    
+                    # Add historical data
+                    fig.add_trace(
+                        go.Scatter(
+                            x=forecast_data['actual_dates'][-90:],  # Show last 90 days
+                            y=forecast_data['actual_prices'][-90:],
+                            mode='lines',
+                            name='Historical',
+                            line=dict(color='black')
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Add forecast traces with confidence intervals
+                    colors = {
+                        'ARIMA': 'blue',
+                        'Exponential': 'red',
+                        'Linear': 'green'
+                    }
+                    
+                    # Add each forecast model's prediction
+                    for model_name, forecast_values in forecast_data['forecasts'].items():
+                        # Add main forecast line
+                        fig.add_trace(
+                            go.Scatter(
+                                x=forecast_data['future_dates'],
+                                y=forecast_values,
+                                mode='lines',
+                                name=f"{model_name} Forecast",
+                                line=dict(color=colors.get(model_name, 'orange')),
+                            ),
+                            row=1, col=1
+                        )
+                        
+                        # Add percentage difference from last price (bottom panel)
+                        pct_diff = [(x - forecast_data['last_price']) / forecast_data['last_price'] * 100 
+                                    for x in forecast_values]
+                        
+                        fig.add_trace(
+                            go.Scatter(
+                                x=forecast_data['future_dates'],
+                                y=pct_diff,
+                                mode='lines',
+                                name=f"{model_name} % Change",
+                                line=dict(color=colors.get(model_name, 'orange')),
+                            ),
+                            row=2, col=1
+                        )
+                    
+                    # Add zero line for percentage plot
+                    fig.add_shape(
+                        type="line",
+                        x0=forecast_data['future_dates'][0],
+                        y0=0,
+                        x1=forecast_data['future_dates'][-1],
+                        y1=0,
+                        line=dict(color="gray", width=1, dash="dash"),
+                        row=2, col=1
+                    )
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=f"{ticker} {forecast_period}-Day Price Forecast",
+                        height=700,
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=1.02,
+                            xanchor="right",
+                            x=1
+                        ),
+                        hovermode="x unified"
+                    )
+                    
+                    fig.update_yaxes(title_text="Price ($)", row=1, col=1)
+                    fig.update_yaxes(title_text="% Change", row=2, col=1)
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Display forecast summary table
+                    st.subheader("Forecast Summary")
+                    
+                    # Create a summary table
+                    forecast_summary = {
+                        'Date': forecast_data['future_dates'].strftime('%Y-%m-%d'),
+                    }
+                    
+                    for model_name, forecast_values in forecast_data['forecasts'].items():
+                        forecast_summary[f'{model_name}'] = forecast_values.round(2)
+                        
+                    # Create DataFrame and display
+                    summary_df = pd.DataFrame(forecast_summary)
+                    
+                    # Show only selected rows (first day, week, month end)
+                    display_indices = [0, 6, 13, 29] if forecast_period >= 30 else [0, 6, forecast_period-1]
+                    display_indices = [i for i in display_indices if i < forecast_period]
+                    
+                    st.dataframe(summary_df.iloc[display_indices])
+                    
+                    # Add download button for full forecast data
+                    csv = summary_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download Forecast Data",
+                        data=csv,
+                        file_name=f"{ticker}_forecast_{forecast_period}days.csv",
+                        mime="text/csv",
+                    )
+                    
+                    # Add forecast analytics
+                    st.subheader("Forecast Analytics")
+                    
+                    # Calculate agreement between models
+                    last_price = forecast_data['last_price']
+                    end_forecasts = {model: values[-1] for model, values in forecast_data['forecasts'].items()}
+                    
+                    bullish_count = sum(1 for value in end_forecasts.values() if value > last_price)
+                    bearish_count = sum(1 for value in end_forecasts.values() if value < last_price)
+                    
+                    # Display sentiment gauges as columns
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        sentiment = "Bullish" if bullish_count > bearish_count else "Bearish" if bearish_count > bullish_count else "Neutral"
+                        color = "green" if sentiment == "Bullish" else "red" if sentiment == "Bearish" else "gray"
+                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{sentiment}</h3>", unsafe_allow_html=True)
+                        st.markdown("<p style='text-align: center;'>Overall Forecast Sentiment</p>", unsafe_allow_html=True)
+                    
+                    with col2:
+                        avg_end_price = sum(end_forecasts.values()) / len(end_forecasts)
+                        pct_change = (avg_end_price - last_price) / last_price * 100
+                        color = "green" if pct_change > 0 else "red"
+                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{pct_change:.2f}%</h3>", unsafe_allow_html=True)
+                        st.markdown("<p style='text-align: center;'>Average Projected Change</p>", unsafe_allow_html=True)
+                    
+                    with col3:
+                        # Calculate average price at forecast period/2 (middle point)
+                        mid_point = forecast_period // 2
+                        mid_forecasts = {model: values[mid_point] for model, values in forecast_data['forecasts'].items()}
+                        mid_avg = sum(mid_forecasts.values()) / len(mid_forecasts)
+                        end_avg = sum(end_forecasts.values()) / len(end_forecasts)
+                        
+                        # Determine if trend is accelerating or decelerating
+                        mid_pct = (mid_avg - last_price) / last_price
+                        end_pct = (end_avg - last_price) / last_price
+                        trend_speed = abs(end_pct) > abs(mid_pct * 2)
+                        
+                        if end_pct > 0:
+                            trend_text = "Accelerating Up" if trend_speed else "Steady Up"
+                            color = "green"
+                        else:
+                            trend_text = "Accelerating Down" if trend_speed else "Steady Down"
+                            color = "red"
+                            
+                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{trend_text}</h3>", unsafe_allow_html=True)
+                        st.markdown("<p style='text-align: center;'>Trend Velocity</p>", unsafe_allow_html=True)
+                    
+                    # Add explanatory text
+                    st.markdown("""
+                    **Understanding the Forecast:**
+                    - The forecast combines multiple statistical models (ARIMA, Exponential Smoothing, and Linear Trend)
+                    - Each model has different strengths and may perform better in different market conditions
+                    - The percentage change chart shows projected movement from the last closing price
+                    - For longer-term investment decisions, consider using longer forecast periods
+                    """)
+                    
+                else:
+                    st.error("Unable to generate forecast. Please try a different ticker or time period.")
+    else:
+        st.warning(f"No data available for {ticker}. Please enter a valid ticker symbol.")
+
+     
     # Add stock information websites
     st.sidebar.header("Stock Resources")
     st.sidebar.markdown("""
