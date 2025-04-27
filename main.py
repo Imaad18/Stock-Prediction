@@ -33,7 +33,7 @@ def load_data(ticker, start_date, end_date):
         if not isinstance(ticker, str) or not ticker.strip():
             return None
             
-        ticker = str(ticker).strip().upper()  # Ensure no whitespace
+        ticker = ticker.strip()  # Ensure no whitespace
         
         # Add 1 day to end_date to ensure we get the most recent data
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
@@ -51,22 +51,11 @@ def create_linear_model(X_train, y_train):
 # Function to calculate technical indicators manually
 def calculate_indicators(df):
     try:
-        st.write("DataFrame index type:", type(df.index))
-        st.write("DataFrame index sample:", df.index[:2])
         if df is None or len(df) < 10:
             return df
-
+            
         # Create a copy to avoid modifying original dataframe
         df_copy = df.copy()
-            
-         # Ensure index is proper datetime
-        if not isinstance(df_copy.index, pd.DatetimeIndex):
-            st.warning("DataFrame index is not DatetimeIndex. Converting automatically.")
-            try:
-                df_copy.index = pd.to_datetime(df_copy.index)
-            except:
-                st.error("Could not convert index to datetime.")
-                return df
         
         # Calculate Simple Moving Averages
         df_copy['SMA20'] = df_copy['Close'].rolling(window=20).mean()
@@ -110,16 +99,6 @@ def detect_patterns(df):
     patterns = {}
     
     try:
-        # Explicitly ensure df has the right type of index
-        df = df.copy()  # Make a copy to avoid modifying the original
-        
-        # Check if the index has the correct date format
-        if not isinstance(df.index, pd.DatetimeIndex):
-            try:
-                df.index = pd.to_datetime(df.index)
-            except Exception as e:
-                st.write(f"Error converting index: {e}")
-                return None, None
         # Calculate indicators
         df_analysis = calculate_indicators(df)
         
@@ -350,8 +329,7 @@ if 'alerts' not in st.session_state:
 with st.sidebar:
     st.header("Input Parameters")
     ticker = st.text_input("Main Stock Ticker", "AAPL").strip().upper()
-    compare_tickers_input = st.text_input("Compare with (comma separated)", "MSFT,GOOG")
-    compare_tickers = [t.strip().upper() for t in compare_tickers_input.split(",") if t.strip()]
+    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").split(",")
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
     
@@ -452,8 +430,7 @@ with tabs[1]:
     st.header("Technical Patterns & Events")
     
     if ticker in valid_tickers:
-        ticker_str = str(ticker).strip()
-        df = valid_tickers[ticker_str]
+        df = valid_tickers[ticker]
         
         # Detect patterns
         with st.spinner("Analyzing patterns..."):
@@ -916,20 +893,4 @@ with tabs[3]:  # This is the new Forecast tab
 # Calculate and show elapsed time properly
 elapsed_time = time.time() - start_time
 st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")
-
-   
-    
- 
-    
-    
-
-
-
-
-
-
-
-
-
-
 
