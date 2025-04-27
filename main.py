@@ -33,10 +33,10 @@ def load_data(ticker, start_date, end_date):
         if not isinstance(ticker, str) or not ticker.strip():
             return None
             
-        ticker = ticker.strip()  # Ensure no whitespace
+        ticker = ticker.strip().upper()  # Ensure no whitespace and uppercase
         
         # Add 1 day to end_date to ensure we get the most recent data
-        df = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        df = yf.download(ticker, start=start_date, end=end_date + timedelta(days=1), progress=False)
         return df if not df.empty else None
     except Exception as e:
         st.error(f"Error fetching data for {ticker}: {str(e)}")
@@ -72,9 +72,8 @@ def calculate_indicators(df):
         delta = df_copy['Close'].diff()
         gain = delta.copy()
         loss = delta.copy()
-        # Use .loc instead of direct assignment to avoid Series truth value is ambiguous error
-        gain.loc[gain < 0] = 0
-        loss.loc[loss > 0] = 0
+        gain[gain < 0] = 0
+        loss[loss > 0] = 0
         loss = abs(loss)
         
         avg_gain = gain.rolling(window=14).mean()
@@ -329,7 +328,11 @@ if 'alerts' not in st.session_state:
 with st.sidebar:
     st.header("Input Parameters")
     ticker = st.text_input("Main Stock Ticker", "AAPL").strip().upper()
-    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").split(",")
+    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").strip()
+    if compare_tickers:
+        compare_tickers = [t.strip().upper() for t in compare_tickers.split(",") if t.strip()]
+    else:
+        compare_tickers = []
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
     
@@ -340,12 +343,8 @@ with st.sidebar:
 tabs = st.tabs(["Prediction", "Pattern Recognition", "Alerts", "Forecast"])
 
 # Get all tickers to fetch
-all_tickers = [ticker]
-for t in compare_tickers:
-    sanitized = t.strip().upper()
-    if len(sanitized) > 1 and sanitized not in all_tickers:
-        all_tickers.append(sanitized)
-all_tickers = list(set(all_tickers))
+all_tickers = [ticker] + compare_tickers
+all_tickers = list(set(all_tickers))  # Remove duplicates
 
 # Fetch data in parallel
 valid_tickers = {}
@@ -354,7 +353,6 @@ invalid_tickers = set()
 with st.spinner("Loading stock data..."):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = {executor.submit(load_data, t, start_date, end_date): t for t in all_tickers}
-        data = {}
         for future in concurrent.futures.as_completed(futures):
             ticker_name = futures[future]
             result = future.result()
@@ -677,7 +675,7 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error displaying price for {t}: {str(e)}")
 
-with tabs[3]:  # This is the new Forecast tab
+with tabs[3]:  # Forecast tab
     st.header("Long-Term Price Forecast")
     
     if ticker in valid_tickers:
@@ -843,7 +841,6 @@ with tabs[3]:  # This is the new Forecast tab
                         st.markdown(f"<h3 style='text-align: center; color: {color};'>{pct_change:.2f}%</h3>", unsafe_allow_html=True)
                         st.markdown("<p style='text-align: center;'>Average Projected Change</p>", unsafe_allow_html=True)
                     
-                                       
                     with col3:
                         # Calculate average price at forecast period/2 (middle point)
                         mid_point = forecast_period // 2
@@ -880,8 +877,9 @@ with tabs[3]:  # This is the new Forecast tab
     else:
         st.warning(f"No data available for {ticker}. Please enter a valid ticker symbol.")
 
-     
-    # Add stock information websites
+
+
+# Add stock information websites
     st.sidebar.header("Stock Resources")
     st.sidebar.markdown("""
     - [Yahoo Finance](https://finance.yahoo.com/)
@@ -892,4 +890,4 @@ with tabs[3]:  # This is the new Forecast tab
 
 # Calculate and show elapsed time properly
 elapsed_time = time.time() - start_time
-st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")    wait ill provide you errors im facing in streamlit
+st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")
