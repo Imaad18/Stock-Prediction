@@ -51,6 +51,8 @@ def create_linear_model(X_train, y_train):
 # Function to calculate technical indicators manually
 def calculate_indicators(df):
     try:
+        st.write("DataFrame index type:", type(df.index))
+        st.write("DataFrame index sample:", df.index[:2])
         if df is None or len(df) < 10:
             return df
 
@@ -108,6 +110,16 @@ def detect_patterns(df):
     patterns = {}
     
     try:
+        # Explicitly ensure df has the right type of index
+        df = df.copy()  # Make a copy to avoid modifying the original
+        
+        # Check if the index has the correct date format
+        if not isinstance(df.index, pd.DatetimeIndex):
+            try:
+                df.index = pd.to_datetime(df.index)
+            except Exception as e:
+                st.write(f"Error converting index: {e}")
+                return None, None
         # Calculate indicators
         df_analysis = calculate_indicators(df)
         
@@ -440,7 +452,8 @@ with tabs[1]:
     st.header("Technical Patterns & Events")
     
     if ticker in valid_tickers:
-        df = valid_tickers[ticker]
+        ticker_str = str(ticker).strip()
+        df = valid_tickers[ticker_str]
         
         # Detect patterns
         with st.spinner("Analyzing patterns..."):
