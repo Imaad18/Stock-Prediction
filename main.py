@@ -329,22 +329,9 @@ if 'alerts' not in st.session_state:
 with st.sidebar:
     st.header("Input Parameters")
     ticker = st.text_input("Main Stock Ticker", "AAPL").strip().upper()
- 
-    # Add this right after:
-    if not ticker.isalpha():
-        st.error("Please enter a valid stock ticker (letters only)")
-        st.stop()   
-    
-    # With this:
-    compare_tickers_input = st.text_input("Compare with (comma separated)", "MSFT,GOOG")
-    compare_tickers = [t.strip().upper() for t in compare_tickers_input.split(",") if t.strip()]
+    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").split(",")
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
-
-    # Add this right after:
-    if end_date <= start_date:
-        st.error("End date must be after start date")
-        st.stop()
     
     # Add a button to trigger the prediction
     run_prediction = st.button("Run Analysis", type="primary")
@@ -804,12 +791,14 @@ with tabs[3]:  # This is the new Forecast tab
                     # Display forecast summary table
                     st.subheader("Forecast Summary")
                     
-                    # With this:
-                    forecast_summary = {'Date': [d.strftime('%Y-%m-%d') for d in forecast_data['future_dates']  # Convert to list of strings}
-
+                    # Create a summary table
+                    forecast_summary = {
+                        'Date': forecast_data['future_dates'].strftime('%Y-%m-%d'),
+                    }
+                    
                     for model_name, forecast_values in forecast_data['forecasts'].items():
-                        forecast_summary[f'{model_name}'] = list(forecast_values.round(2))  # Ensure it's a list
-                                                 
+                        forecast_summary[f'{model_name}'] = forecast_values.round(2)
+                        
                     # Create DataFrame and display
                     summary_df = pd.DataFrame(forecast_summary)
                     
@@ -903,5 +892,4 @@ with tabs[3]:  # This is the new Forecast tab
 
 # Calculate and show elapsed time properly
 elapsed_time = time.time() - start_time
-st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")
-
+st.sidebar.info(f"Data loaded in {elapsed_time:.2f} seconds")    wait ill provide you errors im facing in streamlit
