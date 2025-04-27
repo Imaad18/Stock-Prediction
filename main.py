@@ -53,9 +53,18 @@ def calculate_indicators(df):
     try:
         if df is None or len(df) < 10:
             return df
-            
+
         # Create a copy to avoid modifying original dataframe
         df_copy = df.copy()
+            
+         # Ensure index is proper datetime
+        if not isinstance(df_copy.index, pd.DatetimeIndex):
+            st.warning("DataFrame index is not DatetimeIndex. Converting automatically.")
+            try:
+                df_copy.index = pd.to_datetime(df_copy.index)
+            except:
+                st.error("Could not convert index to datetime.")
+                return df
         
         # Calculate Simple Moving Averages
         df_copy['SMA20'] = df_copy['Close'].rolling(window=20).mean()
@@ -329,7 +338,8 @@ if 'alerts' not in st.session_state:
 with st.sidebar:
     st.header("Input Parameters")
     ticker = st.text_input("Main Stock Ticker", "AAPL").strip().upper()
-    compare_tickers = st.text_input("Compare with (comma separated)", "MSFT,GOOG").split(",")
+    compare_tickers_input = st.text_input("Compare with (comma separated)", "MSFT,GOOG")
+    compare_tickers = [t.strip().upper() for t in compare_tickers_input.split(",") if t.strip()]
     start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
     end_date = st.date_input("End Date", datetime.now())
     
