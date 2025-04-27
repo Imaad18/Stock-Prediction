@@ -33,7 +33,7 @@ def load_data(ticker, start_date, end_date):
         if not isinstance(ticker, str) or not ticker.strip():
             return None
             
-        ticker = ticker.strip()  # Ensure no whitespace
+        ticker = str(ticker).strip().upper()  # Ensure no whitespace
         
         # Add 1 day to end_date to ensure we get the most recent data
         df = yf.download(ticker, start=start_date, end=end_date, progress=False)
