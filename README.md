@@ -1,3 +1,7 @@
+![image](https://github.com/user-attachments/assets/5549006c-a2ef-4d33-8344-723b80243426)
+
+
+
 **Live Demo in Form of Web App:**
 https://stock-prediction-x6scrftemuuhcjwradxhs6.streamlit.app/
 
