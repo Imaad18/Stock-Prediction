@@ -262,7 +262,7 @@ def create_forecast_models(df, forecast_days=30):
                 # Try simple ARIMA model (1,1,1)
                 arima_model = ARIMA(close_prices, order=(1, 1, 1))
                 arima_result = arima_model.fit()
-                arima_forecast = arima_result.forecast(steps=forecast_days)
+                arima_forecast = arima_result.get_forecast(steps=forecast_days).predicted_mean
                 forecasts['ARIMA'] = arima_forecast
             except Exception as e:
                 st.warning(f"ARIMA model error: {str(e)}")
@@ -646,7 +646,7 @@ with st.sidebar:
                 # Calculate price change percentage
                 if len(df_t) > 1:
                     prev_price = float(df_t['Close'].iloc[-2])
-                    price_delta = f"{((last_price - prev_price) / prev_price) * 100:.2f}%"
+                    price_delta = f"{((last_price - prev_price) / prev_price * 100):.2f}%"
                 else:
                     price_delta = None
                 
