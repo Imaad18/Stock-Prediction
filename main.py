@@ -676,23 +676,31 @@ with st.sidebar:
                 st.error(f"Error displaying price for {t}: {str(e)}")
 
 with tabs[3]:  # Forecast tab
-    st.header("Long-Term Price Forecast")
+    st.header("📈 Price Forecast Analysis")
     
     if ticker in valid_tickers:
         df = valid_tickers[ticker]
         
-        # Add forecast period selection
-        forecast_period = st.slider(
-            "Forecast Period (Days)", 
-            min_value=7, 
-            max_value=90, 
-            value=30,
-            step=7
-        )
+        # Add forecast period selection with clear labels
+        st.markdown("### Select Forecast Period")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            forecast_period = st.slider(
+                "Number of days to forecast:", 
+                min_value=7, 
+                max_value=90, 
+                value=30,
+                step=7,
+                key="forecast_period"
+            )
+        with col2:
+            st.markdown("""
+            <div style="margin-top: 25px;">
+                <small>Short-term: 7-14 days<br>Medium-term: 15-30 days<br>Long-term: 30+ days</small>
+            </div>
+            """, unsafe_allow_html=True)
         
-        forecast_button = st.button("Generate Forecast", key="forecast_btn")
-        
-        if forecast_button:
+        if st.button("Generate Forecast", key="forecast_btn", type="primary"):
             with st.spinner("Calculating forecasts..."):
                 # Create forecast models
                 forecast_data = create_forecast_models(df, forecast_days=forecast_period)
@@ -704,7 +712,7 @@ with tabs[3]:  # Forecast tab
                         cols=1,
                         shared_xaxes=True,
                         vertical_spacing=0.1,
-                        subplot_titles=("Price Forecast", "Forecast Comparison"),
+                        subplot_titles=("Price Forecast", "Percentage Change from Current Price"),
                         row_heights=[0.7, 0.3]
                     )
                     
@@ -714,21 +722,37 @@ with tabs[3]:  # Forecast tab
                             x=forecast_data['actual_dates'][-90:],  # Show last 90 days
                             y=forecast_data['actual_prices'][-90:],
                             mode='lines',
-                            name='Historical',
-                            line=dict(color='black')
+                            name='Historical Price',
+                            line=dict(color='black', width=2)
                         ),
+                        row=1, col=1
+                    )
+                    
+                    # Add current price marker
+                    last_price = forecast_data['last_price']
+                    fig.add_shape(
+                        type="line",
+                        x0=forecast_data['actual_dates'][-1],
+                        y0=last_price,
+                        x1=forecast_data['future_dates'][-1],
+                        y1=last_price,
+                        line=dict(color="gray", width=1, dash="dot"),
                         row=1, col=1
                     )
                     
                     # Add forecast traces with confidence intervals
                     colors = {
-                        'ARIMA': 'blue',
-                        'Exponential': 'red',
-                        'Linear': 'green'
+                        'ARIMA': '#1f77b4',
+                        'Exponential': '#ff7f0e',
+                        'Linear': '#2ca02c'
                     }
                     
                     # Add each forecast model's prediction
                     for model_name, forecast_values in forecast_data['forecasts'].items():
+                        # Ensure forecast_values is not empty
+                        if len(forecast_values) == 0:
+                            continue
+                            
                         # Add main forecast line
                         fig.add_trace(
                             go.Scatter(
@@ -736,14 +760,14 @@ with tabs[3]:  # Forecast tab
                                 y=forecast_values,
                                 mode='lines',
                                 name=f"{model_name} Forecast",
-                                line=dict(color=colors.get(model_name, 'orange')),
+                                line=dict(color=colors.get(model_name, '#9467bd'), width=2),
+                                hoverinfo='x+y+name',
                             ),
                             row=1, col=1
                         )
                         
                         # Add percentage difference from last price (bottom panel)
-                        pct_diff = [(x - forecast_data['last_price']) / forecast_data['last_price'] * 100 
-                                    for x in forecast_values]
+                        pct_diff = [(x - last_price) / last_price * 100 for x in forecast_values]
                         
                         fig.add_trace(
                             go.Scatter(
@@ -751,7 +775,8 @@ with tabs[3]:  # Forecast tab
                                 y=pct_diff,
                                 mode='lines',
                                 name=f"{model_name} % Change",
-                                line=dict(color=colors.get(model_name, 'orange')),
+                                line=dict(color=colors.get(model_name, '#9467bd'), width=1.5),
+                                hoverinfo='x+y+name',
                             ),
                             row=2, col=1
                         )
@@ -769,7 +794,7 @@ with tabs[3]:  # Forecast tab
                     
                     # Update layout
                     fig.update_layout(
-                        title=f"{ticker} {forecast_period}-Day Price Forecast",
+                        title=f"{ticker} {forecast_period}-Day Price Forecast | Current: ${last_price:.2f}",
                         height=700,
                         legend=dict(
                             orientation="h",
@@ -778,173 +803,125 @@ with tabs[3]:  # Forecast tab
                             xanchor="right",
                             x=1
                         ),
-                        hovermode="x unified"
+                        hovermode="x unified",
+                        margin=dict(t=80, b=80),
+                        plot_bgcolor='rgba(240,240,240,0.8)'
                     )
                     
                     fig.update_yaxes(title_text="Price ($)", row=1, col=1)
-                    fig.update_yaxes(title_text="% Change", row=2, col=1)
+                    fig.update_yaxes(title_text="% Change from Current", row=2, col=1)
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Display forecast summary table with enhanced formatting
-                    st.subheader("Forecast Summary")
+                    # Display forecast summary with clear organization
+                    st.markdown("### 📊 Forecast Summary")
                     
-                    # Create a summary DataFrame
+                    # Create summary data
                     summary_data = []
-                    last_price = forecast_data['last_price']
+                    key_dates = [
+                        (0, "Tomorrow"),
+                        (6, "1 Week"),
+                        (13, "2 Weeks"),
+                        (29, "1 Month") if forecast_period >= 30 else (forecast_period-1, "Final Day")
+                    ]
                     
-                    for i, date in enumerate(forecast_data['future_dates']):
-                        row_data = {'Date': date.strftime('%Y-%m-%d')}
+                    for day_idx, label in key_dates:
+                        if day_idx >= forecast_period:
+                            continue
+                            
+                        date_str = forecast_data['future_dates'][day_idx].strftime('%Y-%m-%d')
+                        row = {'Period': label, 'Date': date_str}
                         
                         for model_name, forecast_values in forecast_data['forecasts'].items():
-                            if i < len(forecast_values):
-                                price = forecast_values[i]
+                            if day_idx < len(forecast_values):
+                                price = forecast_values[day_idx]
                                 pct_change = (price - last_price) / last_price * 100
-                                row_data[f'{model_name}'] = f"${price:.2f} ({pct_change:+.2f}%)"
+                                row[model_name] = {
+                                    'price': price,
+                                    'pct_change': pct_change,
+                                    'formatted': f"${price:.2f} ({pct_change:+.2f}%)"
+                                }
                         
-                        summary_data.append(row_data)
+                        summary_data.append(row)
                     
-                    summary_df = pd.DataFrame(summary_data)
+                    # Display summary as columns for better readability
+                    cols = st.columns(len(summary_data))
                     
-                    # Highlight important rows (first day, week, month end)
-                    def highlight_rows(row):
-                        styles = [''] * len(row)
-                        if row.name == 0:
-                            styles = ['background-color: #f0f0f0' for _ in styles]
-                        elif row.name == 6:
-                            styles = ['background-color: #e6f3ff' for _ in styles]
-                        elif row.name == forecast_period-1:
-                            styles = ['background-color: #e6ffe6' for _ in styles]
-                        return styles
-                    
-                    # Show only selected rows (first day, week, month end)
-                    display_indices = [0, 6, 13, 29] if forecast_period >= 30 else [0, 6, forecast_period-1]
-                    display_indices = [i for i in display_indices if i < forecast_period]
-                    
-                    # Apply styling and display
-                    st.dataframe(
-                        summary_df.iloc[display_indices].style.apply(highlight_rows, axis=1),
-                        use_container_width=True
-                    )
-                    
-                    # Add download button for full forecast data
-                    csv = summary_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Full Forecast Data",
-                        data=csv,
-                        file_name=f"{ticker}_forecast_{forecast_period}days.csv",
-                        mime="text/csv",
-                    )
-                    
-                    # Enhanced forecast analytics with visual indicators
-                    st.subheader("Forecast Analytics")
-                    
-                    # Calculate agreement between models
-                    last_price = forecast_data['last_price']
-                    end_forecasts = {model: values[-1] for model, values in forecast_data['forecasts'].items()}
-                    
-                    bullish_count = sum(1 for value in end_forecasts.values() if value > last_price)
-                    bearish_count = sum(1 for value in end_forecasts.values() if value < last_price)
-                    total_models = len(end_forecasts)
-                    
-                    # Display sentiment gauges as columns
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        sentiment = "Bullish" if bullish_count > bearish_count else "Bearish" if bearish_count > bullish_count else "Neutral"
-                        color = "green" if sentiment == "Bullish" else "red" if sentiment == "Bearish" else "gray"
-                        
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <h3 style="color: {color}; margin-bottom: 0;">{sentiment}</h3>
-                            <p style="margin-top: 0;">Overall Forecast Sentiment</p>
-                            <p>{bullish_count}/{total_models} models bullish</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col2:
-                        avg_end_price = sum(end_forecasts.values()) / len(end_forecasts)
-                        pct_change = (avg_end_price - last_price) / last_price * 100
-                        color = "green" if pct_change > 0 else "red"
-                        
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <h3 style="color: {color}; margin-bottom: 0;">{pct_change:+.2f}%</h3>
-                            <p style="margin-top: 0;">Average Projected Change</p>
-                            <p>From ${last_price:.2f} to ${avg_end_price:.2f}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col3:
-                        # Calculate average price at forecast period/2 (middle point)
-                        mid_point = forecast_period // 2
-                        mid_forecasts = {model: values[mid_point] for model, values in forecast_data['forecasts'].items()}
-                        mid_avg = sum(mid_forecasts.values()) / len(mid_forecasts)
-                        end_avg = sum(end_forecasts.values()) / len(end_forecasts)
-                        
-                        # Determine if trend is accelerating or decelerating
-                        mid_pct = (mid_avg - last_price) / last_price * 100
-                        end_pct = (end_avg - last_price) / last_price * 100
-                        trend_speed = abs(end_pct) > abs(mid_pct * 1.5)  # More sensitive threshold
-                        
-                        if end_pct > 0:
-                            trend_text = "Accelerating Up" if trend_speed else "Steady Up"
-                            color = "green"
-                        else:
-                            trend_text = "Accelerating Down" if trend_speed else "Steady Down"
-                            color = "red"
+                    for idx, period_data in enumerate(summary_data):
+                        with cols[idx]:
+                            st.markdown(f"**{period_data['Period']}**")
+                            st.caption(period_data['Date'])
                             
-                        st.markdown(f"""
-                        <div style="text-align: center;">
-                            <h3 style="color: {color}; margin-bottom: 0;">{trend_text}</h3>
-                            <p style="margin-top: 0;">Trend Velocity</p>
-                            <p>Mid: {mid_pct:+.2f}% → End: {end_pct:+.2f}%</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            for model_name in forecast_data['forecasts'].keys():
+                                if model_name in period_data:
+                                    model_data = period_data[model_name]
+                                    color = "green" if model_data['pct_change'] > 0 else "red"
+                                    st.markdown(
+                                        f"<div style='margin: 5px 0;'>"
+                                        f"<small>{model_name}:</small><br>"
+                                        f"<span style='color: {color}; font-weight: bold;'>{model_data['formatted']}</span>"
+                                        f"</div>",
+                                        unsafe_allow_html=True
+                                    )
                     
-                    # Add model confidence indicators
-                    st.subheader("Model Confidence")
+                    # Add model comparison metrics
+                    st.markdown("### 🔍 Model Comparison")
                     
-                    # Calculate variance between models
-                    end_prices = list(end_forecasts.values())
-                    price_range = max(end_prices) - min(end_prices)
-                    range_pct = (price_range / last_price) * 100
+                    # Calculate end forecasts
+                    end_forecasts = {}
+                    for model_name, forecast_values in forecast_data['forecasts'].items():
+                        if len(forecast_values) > 0:
+                            end_forecasts[model_name] = forecast_values[-1]
                     
-                    if range_pct < 5:
-                        confidence = "High"
-                        confidence_color = "green"
-                        confidence_desc = "Models agree on direction and magnitude"
-                    elif range_pct < 10:
-                        confidence = "Medium"
-                        confidence_color = "orange"
-                        confidence_desc = "Models agree on direction but differ in magnitude"
-                    else:
-                        confidence = "Low"
-                        confidence_color = "red"
-                        confidence_desc = "Models disagree on direction or show wide range"
-                    
-                    st.markdown(f"""
-                    <div style="border-left: 4px solid {confidence_color}; padding-left: 1rem;">
-                        <h4 style="color: {confidence_color}; margin-bottom: 0.5rem;">{confidence} Confidence</h4>
-                        <p style="margin-top: 0;">{confidence_desc}</p>
-                        <p>Price range at forecast end: ${min(end_prices):.2f}-${max(end_prices):.2f} ({range_pct:.1f}% range)</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Add explanatory text
-                    with st.expander("Understanding the Forecast"):
-                        st.markdown("""
-                        **Forecast Methodology:**
-                        - **ARIMA**: AutoRegressive Integrated Moving Average - best for short-term forecasts with clear trends
-                        - **Exponential Smoothing**: Captures trends and seasonality - good for medium-term forecasts
-                        - **Linear Regression**: Simple trend projection - best for long-term direction
+                    if end_forecasts:
+                        # Calculate statistics
+                        min_forecast = min(end_forecasts.values())
+                        max_forecast = max(end_forecasts.values())
+                        avg_forecast = sum(end_forecasts.values()) / len(end_forecasts)
                         
-                        **How to Interpret:**
-                        - When models agree, confidence is higher
-                        - Large differences between models suggest uncertainty
-                        - Percentage change chart shows projected movement from current price
-                        - For investment decisions, consider using multiple forecast periods
+                        # Display in metrics
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Average Forecast", f"${avg_forecast:.2f}", 
+                                   f"{(avg_forecast - last_price) / last_price * 100:+.2f}%")
+                        col2.metric("Lowest Forecast", f"${min_forecast:.2f}", 
+                                   f"{(min_forecast - last_price) / last_price * 100:+.2f}%")
+                        col3.metric("Highest Forecast", f"${max_forecast:.2f}", 
+                                   f"{(max_forecast - last_price) / last_price * 100:+.2f}%")
+                        
+                        # Add visual indicator of model agreement
+                        agreement_pct = (1 - (max_forecast - min_forecast) / last_price) * 100
+                        st.progress(int(agreement_pct))
+                        st.caption(f"Model Agreement: {agreement_pct:.1f}% (higher is better)")
+                    
+                    # Add explanation section
+                    with st.expander("ℹ️ How to interpret these forecasts"):
+                        st.markdown("""
+                        **Understanding the Forecast Models:**
+                        - **ARIMA**: Best for short-term predictions, captures recent trends and volatility
+                        - **Exponential Smoothing**: Adapts well to changing trends, good for medium-term
+                        - **Linear Regression**: Simple trend projection, best for long-term direction
+                        
+                        **Key Insights:**
+                        - When models agree, confidence in the forecast is higher
+                        - Large differences between models suggest market uncertainty
+                        - The percentage change chart shows projected movement from current price
+                        - For investment decisions, consider multiple time horizons
                         """)
+                    
+                    # Add download button for forecast data
+                    st.markdown("### 📥 Download Forecast Data")
+                    forecast_df = pd.DataFrame({
+                        'Date': forecast_data['future_dates'],
+                        **{model: values for model, values in forecast_data['forecasts'].items()}
+                    })
+                    csv = forecast_df.to_csv(index=False)
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name=f"{ticker}_forecast_{forecast_period}_days.csv",
+                        mime="text/csv",
+                        help="Download the complete forecast data as CSV"
+                    )
                     
                 else:
                     st.error("Unable to generate forecast. Please try a different ticker or time period.")
