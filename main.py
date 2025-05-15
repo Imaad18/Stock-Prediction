@@ -749,10 +749,13 @@ with tabs[3]:  # Forecast tab
                     
                     # Add each forecast model's prediction
                     for model_name, forecast_values in forecast_data['forecasts'].items():
-                        # Ensure forecast_values is not empty
+                        # Ensure forecast_values is not empty and contains numeric values
                         if len(forecast_values) == 0:
                             continue
                             
+                        # Convert to float if necessary
+                        forecast_values = [float(x) for x in forecast_values]
+                        
                         # Add main forecast line
                         fig.add_trace(
                             go.Scatter(
@@ -767,7 +770,7 @@ with tabs[3]:  # Forecast tab
                         )
                         
                         # Add percentage difference from last price (bottom panel)
-                        pct_diff = [(x - last_price) / last_price * 100 for x in forecast_values]
+                        pct_diff = [(float(x) - last_price) / last_price * 100 for x in forecast_values]
                         
                         fig.add_trace(
                             go.Scatter(
@@ -834,35 +837,40 @@ with tabs[3]:  # Forecast tab
                         
                         for model_name, forecast_values in forecast_data['forecasts'].items():
                             if day_idx < len(forecast_values):
-                                price = forecast_values[day_idx]
-                                pct_change = (price - last_price) / last_price * 100
-                                row[model_name] = {
-                                    'price': price,
-                                    'pct_change': pct_change,
-                                    'formatted': f"${price:.2f} ({pct_change:+.2f}%)"
-                                }
+                                try:
+                                    price = float(forecast_values[day_idx])
+                                    pct_change = (price - last_price) / last_price * 100
+                                    row[model_name] = {
+                                        'price': price,
+                                        'pct_change': pct_change,
+                                        'formatted': f"${price:.2f} ({pct_change:+.2f}%)"
+                                    }
+                                except (TypeError, ValueError, IndexError) as e:
+                                    st.warning(f"Could not process forecast for {model_name} at day {day_idx}: {str(e)}")
+                                    continue
                         
                         summary_data.append(row)
                     
                     # Display summary as columns for better readability
-                    cols = st.columns(len(summary_data))
-                    
-                    for idx, period_data in enumerate(summary_data):
-                        with cols[idx]:
-                            st.markdown(f"**{period_data['Period']}**")
-                            st.caption(period_data['Date'])
-                            
-                            for model_name in forecast_data['forecasts'].keys():
-                                if model_name in period_data:
-                                    model_data = period_data[model_name]
-                                    color = "green" if model_data['pct_change'] > 0 else "red"
-                                    st.markdown(
-                                        f"<div style='margin: 5px 0;'>"
-                                        f"<small>{model_name}:</small><br>"
-                                        f"<span style='color: {color}; font-weight: bold;'>{model_data['formatted']}</span>"
-                                        f"</div>",
-                                        unsafe_allow_html=True
-                                    )
+                    if summary_data:  # Only proceed if we have valid summary data
+                        cols = st.columns(len(summary_data))
+                        
+                        for idx, period_data in enumerate(summary_data):
+                            with cols[idx]:
+                                st.markdown(f"**{period_data['Period']}**")
+                                st.caption(period_data['Date'])
+                                
+                                for model_name in forecast_data['forecasts'].keys():
+                                    if model_name in period_data and 'formatted' in period_data[model_name]:
+                                        model_data = period_data[model_name]
+                                        color = "green" if model_data['pct_change'] > 0 else "red"
+                                        st.markdown(
+                                            f"<div style='margin: 5px 0;'>"
+                                            f"<small>{model_name}:</small><br>"
+                                            f"<span style='color: {color}; font-weight: bold;'>{model_data['formatted']}</span>"
+                                            f"</div>",
+                                            unsafe_allow_html=True
+                                        )
                     
                     # Add model comparison metrics
                     st.markdown("### 🔍 Model Comparison")
@@ -871,7 +879,10 @@ with tabs[3]:  # Forecast tab
                     end_forecasts = {}
                     for model_name, forecast_values in forecast_data['forecasts'].items():
                         if len(forecast_values) > 0:
-                            end_forecasts[model_name] = forecast_values[-1]
+                            try:
+                                end_forecasts[model_name] = float(forecast_values[-1])
+                            except (TypeError, ValueError):
+                                continue
                     
                     if end_forecasts:
                         # Calculate statistics
@@ -912,7 +923,7 @@ with tabs[3]:  # Forecast tab
                     st.markdown("### 📥 Download Forecast Data")
                     forecast_df = pd.DataFrame({
                         'Date': forecast_data['future_dates'],
-                        **{model: values for model, values in forecast_data['forecasts'].items()}
+                        **{model: [float(x) for x in values] for model, values in forecast_data['forecasts'].items()}
                     })
                     csv = forecast_df.to_csv(index=False)
                     st.download_button(
