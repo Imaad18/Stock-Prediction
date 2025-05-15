@@ -45,7 +45,7 @@ https://stock-prediction-x6scrftemuuhcjwradxhs6.streamlit.app/
 * Alert System: Set price alerts that trigger when conditions are met
 
 
-# * User Interface
+# User Interface
 
 1. **Interactive Streamlit** dashboard with multiple tabs.
 
@@ -53,4 +53,4 @@ https://stock-prediction-x6scrftemuuhcjwradxhs6.streamlit.app/
 
 3. **Visual charts** showing price history and **predictions**.
 
-4. **Alert management system** fou users.
+4. **Alert management system** for users.
