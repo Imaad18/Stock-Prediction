@@ -786,36 +786,57 @@ with tabs[3]:  # Forecast tab
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Display forecast summary table
+                    # Display forecast summary table with enhanced formatting
                     st.subheader("Forecast Summary")
                     
-                    # Create a summary table
-                    forecast_summary = {
-                        'Date': forecast_data['future_dates'].strftime('%Y-%m-%d'),
-                    }
+                    # Create a summary DataFrame
+                    summary_data = []
+                    last_price = forecast_data['last_price']
                     
-                    for model_name, forecast_values in forecast_data['forecasts'].items():
-                        forecast_summary[f'{model_name}'] = forecast_values.round(2)
+                    for i, date in enumerate(forecast_data['future_dates']):
+                        row_data = {'Date': date.strftime('%Y-%m-%d')}
                         
-                    # Create DataFrame and display
-                    summary_df = pd.DataFrame(forecast_summary)
+                        for model_name, forecast_values in forecast_data['forecasts'].items():
+                            if i < len(forecast_values):
+                                price = forecast_values[i]
+                                pct_change = (price - last_price) / last_price * 100
+                                row_data[f'{model_name}'] = f"${price:.2f} ({pct_change:+.2f}%)"
+                        
+                        summary_data.append(row_data)
+                    
+                    summary_df = pd.DataFrame(summary_data)
+                    
+                    # Highlight important rows (first day, week, month end)
+                    def highlight_rows(row):
+                        styles = [''] * len(row)
+                        if row.name == 0:
+                            styles = ['background-color: #f0f0f0' for _ in styles]
+                        elif row.name == 6:
+                            styles = ['background-color: #e6f3ff' for _ in styles]
+                        elif row.name == forecast_period-1:
+                            styles = ['background-color: #e6ffe6' for _ in styles]
+                        return styles
                     
                     # Show only selected rows (first day, week, month end)
                     display_indices = [0, 6, 13, 29] if forecast_period >= 30 else [0, 6, forecast_period-1]
                     display_indices = [i for i in display_indices if i < forecast_period]
                     
-                    st.dataframe(summary_df.iloc[display_indices])
+                    # Apply styling and display
+                    st.dataframe(
+                        summary_df.iloc[display_indices].style.apply(highlight_rows, axis=1),
+                        use_container_width=True
+                    )
                     
                     # Add download button for full forecast data
                     csv = summary_df.to_csv(index=False)
                     st.download_button(
-                        label="Download Forecast Data",
+                        label="Download Full Forecast Data",
                         data=csv,
                         file_name=f"{ticker}_forecast_{forecast_period}days.csv",
                         mime="text/csv",
                     )
                     
-                    # Add forecast analytics
+                    # Enhanced forecast analytics with visual indicators
                     st.subheader("Forecast Analytics")
                     
                     # Calculate agreement between models
@@ -824,6 +845,7 @@ with tabs[3]:  # Forecast tab
                     
                     bullish_count = sum(1 for value in end_forecasts.values() if value > last_price)
                     bearish_count = sum(1 for value in end_forecasts.values() if value < last_price)
+                    total_models = len(end_forecasts)
                     
                     # Display sentiment gauges as columns
                     col1, col2, col3 = st.columns(3)
@@ -831,15 +853,27 @@ with tabs[3]:  # Forecast tab
                     with col1:
                         sentiment = "Bullish" if bullish_count > bearish_count else "Bearish" if bearish_count > bullish_count else "Neutral"
                         color = "green" if sentiment == "Bullish" else "red" if sentiment == "Bearish" else "gray"
-                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{sentiment}</h3>", unsafe_allow_html=True)
-                        st.markdown("<p style='text-align: center;'>Overall Forecast Sentiment</p>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"""
+                        <div style="text-align: center;">
+                            <h3 style="color: {color}; margin-bottom: 0;">{sentiment}</h3>
+                            <p style="margin-top: 0;">Overall Forecast Sentiment</p>
+                            <p>{bullish_count}/{total_models} models bullish</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     with col2:
                         avg_end_price = sum(end_forecasts.values()) / len(end_forecasts)
                         pct_change = (avg_end_price - last_price) / last_price * 100
                         color = "green" if pct_change > 0 else "red"
-                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{pct_change:.2f}%</h3>", unsafe_allow_html=True)
-                        st.markdown("<p style='text-align: center;'>Average Projected Change</p>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"""
+                        <div style="text-align: center;">
+                            <h3 style="color: {color}; margin-bottom: 0;">{pct_change:+.2f}%</h3>
+                            <p style="margin-top: 0;">Average Projected Change</p>
+                            <p>From ${last_price:.2f} to ${avg_end_price:.2f}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
                     
                     with col3:
                         # Calculate average price at forecast period/2 (middle point)
@@ -849,9 +883,9 @@ with tabs[3]:  # Forecast tab
                         end_avg = sum(end_forecasts.values()) / len(end_forecasts)
                         
                         # Determine if trend is accelerating or decelerating
-                        mid_pct = (mid_avg - last_price) / last_price
-                        end_pct = (end_avg - last_price) / last_price
-                        trend_speed = abs(end_pct) > abs(mid_pct * 2)
+                        mid_pct = (mid_avg - last_price) / last_price * 100
+                        end_pct = (end_avg - last_price) / last_price * 100
+                        trend_speed = abs(end_pct) > abs(mid_pct * 1.5)  # More sensitive threshold
                         
                         if end_pct > 0:
                             trend_text = "Accelerating Up" if trend_speed else "Steady Up"
@@ -860,33 +894,71 @@ with tabs[3]:  # Forecast tab
                             trend_text = "Accelerating Down" if trend_speed else "Steady Down"
                             color = "red"
                             
-                        st.markdown(f"<h3 style='text-align: center; color: {color};'>{trend_text}</h3>", unsafe_allow_html=True)
-                        st.markdown("<p style='text-align: center;'>Trend Velocity</p>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style="text-align: center;">
+                            <h3 style="color: {color}; margin-bottom: 0;">{trend_text}</h3>
+                            <p style="margin-top: 0;">Trend Velocity</p>
+                            <p>Mid: {mid_pct:+.2f}% → End: {end_pct:+.2f}%</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Add model confidence indicators
+                    st.subheader("Model Confidence")
+                    
+                    # Calculate variance between models
+                    end_prices = list(end_forecasts.values())
+                    price_range = max(end_prices) - min(end_prices)
+                    range_pct = (price_range / last_price) * 100
+                    
+                    if range_pct < 5:
+                        confidence = "High"
+                        confidence_color = "green"
+                        confidence_desc = "Models agree on direction and magnitude"
+                    elif range_pct < 10:
+                        confidence = "Medium"
+                        confidence_color = "orange"
+                        confidence_desc = "Models agree on direction but differ in magnitude"
+                    else:
+                        confidence = "Low"
+                        confidence_color = "red"
+                        confidence_desc = "Models disagree on direction or show wide range"
+                    
+                    st.markdown(f"""
+                    <div style="border-left: 4px solid {confidence_color}; padding-left: 1rem;">
+                        <h4 style="color: {confidence_color}; margin-bottom: 0.5rem;">{confidence} Confidence</h4>
+                        <p style="margin-top: 0;">{confidence_desc}</p>
+                        <p>Price range at forecast end: ${min(end_prices):.2f}-${max(end_prices):.2f} ({range_pct:.1f}% range)</p>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
                     # Add explanatory text
-                    st.markdown("""
-                    **Understanding the Forecast:**
-                    - The forecast combines multiple statistical models (ARIMA, Exponential Smoothing, and Linear Trend)
-                    - Each model has different strengths and may perform better in different market conditions
-                    - The percentage change chart shows projected movement from the last closing price
-                    - For longer-term investment decisions, consider using longer forecast periods
-                    """)
+                    with st.expander("Understanding the Forecast"):
+                        st.markdown("""
+                        **Forecast Methodology:**
+                        - **ARIMA**: AutoRegressive Integrated Moving Average - best for short-term forecasts with clear trends
+                        - **Exponential Smoothing**: Captures trends and seasonality - good for medium-term forecasts
+                        - **Linear Regression**: Simple trend projection - best for long-term direction
+                        
+                        **How to Interpret:**
+                        - When models agree, confidence is higher
+                        - Large differences between models suggest uncertainty
+                        - Percentage change chart shows projected movement from current price
+                        - For investment decisions, consider using multiple forecast periods
+                        """)
                     
                 else:
                     st.error("Unable to generate forecast. Please try a different ticker or time period.")
     else:
         st.warning(f"No data available for {ticker}. Please enter a valid ticker symbol.")
 
-
-
 # Add stock information websites
-    st.sidebar.header("Stock Resources")
-    st.sidebar.markdown("""
-    - [Yahoo Finance](https://finance.yahoo.com/)
-    - [CNBC](https://www.cnbc.com/stock-markets/)
-    - [MarketWatch](https://www.marketwatch.com/)
-    - [Investing.com](https://www.investing.com/)
-    """)
+st.sidebar.header("Stock Resources")
+st.sidebar.markdown("""
+- [Yahoo Finance](https://finance.yahoo.com/)
+- [CNBC](https://www.cnbc.com/stock-markets/)
+- [MarketWatch](https://www.marketwatch.com/)
+- [Investing.com](https://www.investing.com/)
+""")
 
 # Calculate and show elapsed time properly
 elapsed_time = time.time() - start_time
